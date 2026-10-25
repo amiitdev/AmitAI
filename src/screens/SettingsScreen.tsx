@@ -343,6 +343,41 @@ export function SettingsScreen({ settings, onChange, onBack, onClearChats }: Pro
           <View style={[styles.knob, settings.toolsTime && styles.knobOn]} />
         </TouchableOpacity>
       </View>
+      <View style={styles.row}>
+        <Text style={styles.label}>Clipboard</Text>
+        <TouchableOpacity
+          onPress={() => onChange({ toolsClipboard: !settings.toolsClipboard })}
+          style={[styles.toggle, settings.toolsClipboard && styles.toggleOn]}
+          activeOpacity={0.8}
+        >
+          <View style={[styles.knob, settings.toolsClipboard && styles.knobOn]} />
+        </TouchableOpacity>
+      </View>
+      <View style={styles.row}>
+        <Text style={styles.label}>Memory (notes)</Text>
+        <TouchableOpacity
+          onPress={() => onChange({ toolsMemory: !settings.toolsMemory })}
+          style={[styles.toggle, settings.toolsMemory && styles.toggleOn]}
+          activeOpacity={0.8}
+        >
+          <View style={[styles.knob, settings.toolsMemory && styles.knobOn]} />
+        </TouchableOpacity>
+      </View>
+      <View style={styles.row}>
+        <Text style={styles.label}>Scheduled jobs</Text>
+        <TouchableOpacity
+          onPress={() => onChange({ toolsSchedules: !settings.toolsSchedules })}
+          style={[styles.toggle, settings.toolsSchedules && styles.toggleOn]}
+          activeOpacity={0.8}
+        >
+          <View style={[styles.knob, settings.toolsSchedules && styles.knobOn]} />
+        </TouchableOpacity>
+      </View>
+      <Text style={styles.hint}>
+        Clipboard lets the model read what you last copied. Memory is a note list you can
+        inspect in the drawer. Scheduled jobs run the same tools on an alarm, with the app
+        closed.
+      </Text>
 
       <Text style={styles.section}>Storage</Text>
       <View style={styles.row}>

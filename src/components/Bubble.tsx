@@ -7,6 +7,7 @@ import {
   Share,
   ActivityIndicator,
   Linking,
+  Image,
 } from 'react-native';
 import { Message } from '../types';
 import { useTheme, ThemeColors, font, radius, space } from '../theme';
@@ -60,6 +61,14 @@ export function Bubble({ message, onRegenerate, canRegenerate }: Props) {
   };
   const empty = !message.content && message.streaming;
 
+  // Multi-image support (3.7): new messages use imageUris[], old stored ones
+  // still carry the single imageUri.
+  const imageList = message.imageUris?.length
+    ? message.imageUris
+    : message.imageUri
+      ? [message.imageUri]
+      : [];
+
   // Some models (reasoning ones especially) take several seconds before the
   // first token. Keep the "thinking" state visible for a little while after
   // streaming started even if content is still empty, so the user does not see
@@ -81,6 +90,14 @@ export function Bubble({ message, onRegenerate, canRegenerate }: Props) {
       <View style={[styles.bubble, isUser ? styles.user : styles.assistant]}>
         {!isUser && (
           <Text style={styles.author}>AmitAI</Text>
+        )}
+
+        {imageList.length > 0 && (
+          <View style={styles.images}>
+            {imageList.map((uri, i) => (
+              <Image key={`${uri}-${i}`} source={{ uri }} style={styles.attached} />
+            ))}
+          </View>
         )}
 
         {showThinking ? (
@@ -179,6 +196,13 @@ const createStyles = (colors: ThemeColors) =>
     textTransform: 'uppercase',
   },
   userText: { ...font.body },
+  images: { flexDirection: 'row', flexWrap: 'wrap', gap: space(1.5), marginBottom: space(2) },
+  attached: {
+    width: 116,
+    height: 116,
+    borderRadius: radius.sm,
+    backgroundColor: colors.bgInput,
+  },
   thinking: { flexDirection: 'row', alignItems: 'center', gap: space(2) },
   thinkingText: { color: colors.textFaint, fontSize: 14 },
   error: { color: colors.danger, fontSize: 13, marginTop: space(2) },

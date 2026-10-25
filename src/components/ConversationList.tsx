@@ -16,6 +16,8 @@ interface Props {
   onRename: (id: string, title: string) => void;
   onClose: () => void;
   onSettings: () => void;
+  onSchedules: () => void;
+  onMemory: () => void;
 }
 
 function ago(ts: number): string {
@@ -37,6 +39,8 @@ export function ConversationList({
   onRename,
   onClose,
   onSettings,
+  onSchedules,
+  onMemory,
 }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -140,10 +144,20 @@ export function ConversationList({
         }}
       />
 
-      <TouchableOpacity style={styles.footer} onPress={onSettings}>
-        <Ionicons name="settings-outline" size={19} color={colors.textDim} />
-        <Text style={styles.footerText}>Settings</Text>
-      </TouchableOpacity>
+      <View style={styles.footRow}>
+        <TouchableOpacity style={styles.footBtn} onPress={onSchedules}>
+          <Ionicons name="alarm-outline" size={20} color={colors.textDim} />
+          <Text style={styles.footLabel}>Schedules</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.footBtn} onPress={onMemory}>
+          <Ionicons name="bulb-outline" size={20} color={colors.textDim} />
+          <Text style={styles.footLabel}>Memory</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.footBtn} onPress={onSettings}>
+          <Ionicons name="settings-outline" size={20} color={colors.textDim} />
+          <Text style={styles.footLabel}>Settings</Text>
+        </TouchableOpacity>
+      </View>
 
       <ActionSheet
         visible={!!menuFor}
@@ -266,4 +280,13 @@ const createStyles = (colors: ThemeColors) =>
     marginTop: space(2),
   },
   footerText: { color: colors.textDim, fontSize: 15 },
+  footRow: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingVertical: space(2),
+    marginTop: space(2),
+  },
+  footBtn: { flex: 1, alignItems: 'center', gap: space(1), paddingVertical: space(2) },
+  footLabel: { color: colors.textDim, fontSize: 11 },
 });

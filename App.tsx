@@ -38,21 +38,28 @@ import {
 } from './src/storage/store';
 import { runAgent, fileToDataUrl, RunHandle, ping } from './src/api/openai';
 import { makeExecutor } from './src/lib/agentTools';
+import { applySchedules, loadSchedules } from './src/lib/schedules';
 import { Bubble } from './src/components/Bubble';
 import { Composer } from './src/components/Composer';
 import { ConversationList } from './src/components/ConversationList';
 import { SettingsScreen } from './src/screens/SettingsScreen';
+import { SchedulesScreen } from './src/screens/SchedulesScreen';
+import { MemoryScreen } from './src/screens/MemoryScreen';
 import { useKeyboardHeight } from './src/lib/useKeyboard';
 import { stopAllSpeech } from './src/lib/speech';
 import {
   startListening,
   stopListening,
   cancelListening,
-  pickImage,
+  pickImages,
   stopSpeaking,
+  consumeShare,
+  onShare,
+  MAX_IMAGES,
+  SharedPayload,
 } from './src/lib/native';
 
-type Screen = 'chat' | 'settings' | 'drawer';
+type Screen = 'chat' | 'settings' | 'drawer' | 'schedules' | 'memory';
 
 const emptyConversation = () => newConversation();
 
@@ -82,7 +89,7 @@ function AppInner() {
   const [screen, setScreen] = useState<Screen>('chat');
 
   const [draft, setDraft] = useState('');
-  const [imageUri, setImageUri] = useState<string | null>(null);
+  const [imageUris, setImageUris] = useState<string[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [listening, setListening] = useState(false);
   const [modelSheet, setModelSheet] = useState(false);
@@ -108,6 +115,38 @@ function AppInner() {
   }, []);
   const toast = useToast();
 
+  // "Share to AmitAI": the payload is pulled from native (not carried in the
+  // event) so a share that arrived before React mounted still lands here.
+  useEffect(() => {
+    let live = true;
+    const take = (p: SharedPayload) => {
+      if (!live) return;
+      if (p.text) setDraft(p.text);
+      if (p.images.length) {
+        setImageUris(prev => [...prev, ...p.images].slice(0, MAX_IMAGES));
+      }
+      toast(
+        p.images.length
+          ? `Shared ${p.images.length} image${p.images.length === 1 ? '' : 's'} into AmitAI`
+          : 'Shared text into AmitAI',
+        'info',
+      );
+    };
+    consumeShare()
+      .then(p => p && take(p))
+      .catch(() => {});
+    const off = onShare(() => {
+      consumeShare()
+        .then(p => p && take(p))
+        .catch(() => {});
+    });
+    return () => {
+      live = false;
+      off();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const streamRef = useRef<RunHandle | null>(null);
   const voiceRunRef = useRef<RunHandle | null>(null);
   const sourcesRef = useRef<Source[]>([]);
@@ -132,13 +171,20 @@ function AppInner() {
         setActiveId(c.id);
       }
       ready.current = true;
+
+      // Self-heal the alarm set on every launch: recompute each job's next run
+      // from the stored list, so a timezone change, a skipped boot restore or a
+      // stale native copy cannot leave a schedule pointing at the wrong hour.
+      loadSchedules()
+        .then(list => (list.length ? applySchedules(list) : undefined))
+        .catch(() => {});
     })();
   }, [setTheme]);
 
   // Android hardware back: return to chat from Settings/drawer instead of exiting.
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (screen === 'settings' || screen === 'drawer') {
+      if (screen !== 'chat') {
         setScreen('chat');
         return true;
       }
@@ -252,7 +298,7 @@ function AppInner() {
     setConversations(prev => [c, ...prev]);
     setActiveId(c.id);
     setDraft('');
-    setImageUri(null);
+    setImageUris([]);
   }, []);
 
   const removeChat = useCallback(
@@ -377,7 +423,9 @@ function AppInner() {
 
   const send = useCallback(async () => {
     const text = draft.trim();
-    if (!text || streaming || !active) return;
+    const attachments = imageUris.slice(0, MAX_IMAGES);
+    // Images with no caption are a valid message now.
+    if ((!text && !attachments.length) || streaming || !active) return;
 
     if (!settings.apiKey && !settings.baseUrl.includes('11434')) {
       toast('Add your API key first', 'error');
@@ -386,21 +434,30 @@ function AppInner() {
     }
 
     const msg: Message = { ...newMessage('user', text) };
-    if (imageUri) {
-      try {
-        msg.imageData = await fileToDataUrl(imageUri);
-        msg.imageUri = imageUri;
-      } catch {
-        Alert.alert('Image', 'Could not read that image, sending text only.');
+    if (attachments.length) {
+      // Built here, never persisted: base64 in AsyncStorage would blow it up.
+      const datas: string[] = [];
+      for (const uri of attachments) {
+        try {
+          datas.push(await fileToDataUrl(uri));
+        } catch {
+          /* one unreadable file should not lose the rest */
+        }
+      }
+      if (datas.length) {
+        msg.imageDatas = datas;
+        msg.imageUris = attachments.slice(0, datas.length);
+      } else {
+        Alert.alert('Images', 'Could not read those images, sending text only.');
       }
     }
 
     setDraft('');
-    setImageUri(null);
+    setImageUris([]);
 
     const history = [...active.messages.filter(m => !m.error), msg];
     runCompletion(history);
-  }, [draft, streaming, active, settings, imageUri, runCompletion, toast]);
+  }, [draft, streaming, active, settings, imageUris, runCompletion, toast]);
 
   const stop = useCallback(() => {
     streamRef.current?.stop();
@@ -578,6 +635,14 @@ function AppInner() {
             }}
           />
         </View>
+      ) : screen === 'schedules' ? (
+        <View style={{ flex: 1, paddingTop: insets.top }}>
+          <SchedulesScreen onBack={() => setScreen('chat')} />
+        </View>
+      ) : screen === 'memory' ? (
+        <View style={{ flex: 1, paddingTop: insets.top }}>
+          <MemoryScreen onBack={() => setScreen('chat')} />
+        </View>
       ) : (
         <View style={{ flex: 1 }}>
           {header}
@@ -629,9 +694,17 @@ function AppInner() {
               onSend={send}
               onStop={stop}
               streaming={streaming}
-              imageUri={imageUri}
-              onPickImage={async () => setImageUri(await pickImage())}
-              onClearImage={() => setImageUri(null)}
+              imageUris={imageUris}
+              onPickImages={async () => {
+                const room = MAX_IMAGES - imageUris.length;
+                if (room <= 0) return;
+                const picked = await pickImages(room);
+                if (!picked.length) return;
+                setImageUris(prev =>
+                  [...prev, ...picked.filter(u => !prev.includes(u))].slice(0, MAX_IMAGES),
+                );
+              }}
+              onRemoveImage={uri => setImageUris(prev => prev.filter(u => u !== uri))}
               listening={listening}
               onMic={toggleMic}
               disabled={!settings.apiKey && !settings.baseUrl.includes('11434')}
@@ -682,6 +755,8 @@ function AppInner() {
               onRename={renameChat}
               onClose={() => setScreen('chat')}
               onSettings={() => setScreen('settings')}
+              onSchedules={() => setScreen('schedules')}
+              onMemory={() => setScreen('memory')}
             />
           </View>
         </View>

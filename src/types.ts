@@ -19,6 +19,10 @@ export interface Message {
   imageUri?: string;
   /** base64 data URL built at send time; never persisted */
   imageData?: string;
+  /** 1-8 attached images, local file uris (3.7+) */
+  imageUris?: string[];
+  /** data URLs for the same images, built at send time; never persisted */
+  imageDatas?: string[];
   /** true while the assistant is still streaming into this message */
   streaming?: boolean;
   error?: string;
@@ -83,6 +87,12 @@ export interface Settings {
   toolsCalculator: boolean;
   /** let the model read the current time / timezone for a city */
   toolsTime: boolean;
+  /** let the model read whatever the user last copied */
+  toolsClipboard: boolean;
+  /** let the model save and search notes that survive restarts */
+  toolsMemory: boolean;
+  /** let the model create recurring jobs that answer by notification */
+  toolsSchedules: boolean;
 
   /* ---- storage ---- */
   /** 'default' = SharedPreferences + AsyncStorage (small, survives keychain loss).
@@ -118,6 +128,9 @@ export const DEFAULT_SETTINGS: Settings = {
   toolsWeather: true,
   toolsCalculator: true,
   toolsTime: true,
+  toolsClipboard: true,
+  toolsMemory: true,
+  toolsSchedules: true,
 };
 
 export const ELEVEN_MODEL = 'eleven_flash_v2_5';

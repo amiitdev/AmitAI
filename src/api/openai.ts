@@ -71,21 +71,29 @@ export interface ExecuteResult {
   sources?: Source[];
 }
 
-function toWire(messages: Message[], systemPrompt: string): WireMsg[] {
+/**
+ * Message → wire format. Exported for the multi-image test: the attachment
+ * shape (text part + N image parts) is the whole contract with vision models.
+ */
+export function toWire(messages: Message[], systemPrompt: string): WireMsg[] {
   const out: WireMsg[] = [];
   if (systemPrompt.trim()) out.push({ role: 'system', content: systemPrompt.trim() });
   for (const m of messages) {
-    if (m.role === 'system' || !m.content.trim()) continue;
-    if (m.imageData) {
+    if (m.role === 'system') continue;
+    // 1-8 images since 3.7; the single-image fields are kept so old stored
+    // conversations still render and still send.
+    const images = m.imageDatas?.length ? m.imageDatas : m.imageData ? [m.imageData] : [];
+    if (images.length) {
       out.push({
         role: m.role as 'user',
         content: [
-          { type: 'text', text: m.content },
-          { type: 'image_url', image_url: { url: m.imageData } },
+          { type: 'text', text: m.content || 'Describe these images.' },
+          ...images.slice(0, 8).map(url => ({ type: 'image_url', image_url: { url } })),
         ],
       });
       continue;
     }
+    if (!m.content.trim()) continue;
     out.push({ role: m.role as 'user' | 'assistant', content: m.content });
   }
   return out;

@@ -322,9 +322,34 @@ class AmitAssistantModule(private val ctx: ReactApplicationContext) :
         }
     }
 
+    /**
+     * "Share to AmitAI" payload, exactly once.
+     *
+     * Returns null when there is nothing pending. Images are already copied to
+     * the app cache, so the paths stay valid after the sending app is gone.
+     */
     @ReactMethod
-    fun openAppSettings(promise: Promise) {
+    fun consumeShare(promise: Promise) {
         try {
+            val p = ShareIntake.consume()
+            if (p == null) {
+                promise.resolve(null)
+                return
+            }
+            val m = Arguments.createMap()
+            m.putString("text", p.text)
+            val arr = Arguments.createArray()
+            p.images.forEach { arr.pushString(it) }
+            m.putArray("images", arr)
+            m.putDouble("at", p.at.toDouble())
+            promise.resolve(m)
+        } catch (e: Throwable) {
+            promise.resolve(null)
+        }
+    }
+
+    @ReactMethod
+    fun openAppSettings(promise: Promise) {        try {
             val i = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${ctx.packageName}"))
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             ctx.startActivity(i)

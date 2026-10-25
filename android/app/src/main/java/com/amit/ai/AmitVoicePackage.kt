@@ -7,7 +7,7 @@ import com.facebook.react.uimanager.ViewManager
 
 class AmitVoicePackage : ReactPackage {
   override fun createNativeModules(ctx: ReactApplicationContext): List<NativeModule> =
-      listOf(AmitVoiceModule(ctx), AmitAssistantModule(ctx))
+      listOf(AmitVoiceModule(ctx), AmitAssistantModule(ctx), AmitSchedulerModule(ctx))
 
   override fun createViewManagers(ctx: ReactApplicationContext): List<ViewManager<*, *>> =
       emptyList()

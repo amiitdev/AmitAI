@@ -29,5 +29,13 @@ class BootReceiver : BroadcastReceiver() {
             } catch (_: Throwable) {
             }
         }
+
+        // Every AlarmManager alarm is wiped by a reboot (and by an app update).
+        // Rebuild them from the stored list; repeating jobs move to their next
+        // slot instead of firing yesterday's time at boot.
+        try {
+            AmitSchedulerModule.rescheduleAll(context)
+        } catch (_: Throwable) {
+        }
     }
 }

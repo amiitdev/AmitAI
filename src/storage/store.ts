@@ -18,7 +18,7 @@ const native = (() => {
   }
 })();
 
-async function readKey(key: string): Promise<string | null> {
+export async function readKey(key: string): Promise<string | null> {
   try {
     const v = native?.loadJson ? await native.loadJson(key) : null;
     if (typeof v === 'string' && v) return v;
@@ -30,7 +30,7 @@ async function readKey(key: string): Promise<string | null> {
   }
 }
 
-async function writeKey(key: string, value: string): Promise<void> {
+export async function writeKey(key: string, value: string): Promise<void> {
   try {
     native?.saveJson?.(key, value);
   } catch {}
@@ -58,13 +58,6 @@ async function sdWrite(key: string, value: string): Promise<void> {
   if (!native?.saveLargeJson) return;
   try {
     await native.saveLargeJson(key, value);
-  } catch {}
-}
-
-async function sdDelete(key: string): Promise<void> {
-  if (!native?.deleteLargeJson) return;
-  try {
-    await native.deleteLargeJson(key);
   } catch {}
 }
 
