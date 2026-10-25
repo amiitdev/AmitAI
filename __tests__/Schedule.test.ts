@@ -1,7 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { NativeModules } from 'react-native';
 import {
   __resetScheduleCache,
   addSchedule,
+  applySchedules,
   describe as describeSchedule,
   loadSchedules,
   nextCron,
@@ -219,5 +221,38 @@ describe('storage', () => {
 
     await removeSchedule(s.id);
     expect(await loadSchedules()).toHaveLength(0);
+  });
+
+  test('applySchedules sends the exact contract the Kotlin alarm needs', async () => {
+    await addSchedule({
+      title: 'Morning weather',
+      prompt: 'weather in Nagpur',
+      when: 'every day at 8 am',
+      parsed: parseWhen('every day at 8 am', NOW),
+      now: NOW,
+    });
+
+    const replaceAll = jest.fn().mockResolvedValue(1);
+    (NativeModules as any).AmitScheduler = { replaceAll };
+
+    try {
+      expect(await applySchedules(await loadSchedules())).toBe(true);
+      expect(replaceAll).toHaveBeenCalledTimes(1);
+
+      const payload = JSON.parse(replaceAll.mock.calls[0][0]);
+      expect(payload).toHaveLength(1);
+      expect(payload[0]).toMatchObject({
+        title: 'Morning weather',
+        prompt: 'weather in Nagpur',
+        repeatMs: 86_400_000,
+      });
+      // at must be a real future epoch ms — the alarm fires on it verbatim
+      expect(payload[0].at).toBeGreaterThan(Date.now());
+      expect(new Date(payload[0].at).getHours()).toBe(8);
+    } finally {
+      delete (NativeModules as any).AmitScheduler;
+      __resetScheduleCache();
+      await AsyncStorage.clear();
+    }
   });
 });

@@ -18,7 +18,7 @@ hands-free voice, an offline “Ok Amit” wake word and a floating bubble — w
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.2-7f52ff?style=for-the-badge&logo=kotlin&logoColor=white)](https://kotlinlang.org)
 
 ![Version](https://img.shields.io/badge/version-3.7-6366f1?style=flat-square)
-![Tests](https://img.shields.io/badge/tests-70_passed-10b981?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-71_passed-10b981?style=flat-square)
 ![TypeScript](https://img.shields.io/badge/tsc-0_errors-3178c6?style=flat-square&logo=typescript&logoColor=white)
 ![Tools](https://img.shields.io/badge/on--device_tools-12-a855f7?style=flat-square)
 
@@ -709,7 +709,7 @@ AmitAI/
 ├── index.js                        registers <App/>
 ├── assets/                         icon + splash art
 ├── releases/                       APK index + checksums (binaries live on Releases)
-├── __tests__/                      9 suites, 70 tests
+├── __tests__/                      9 suites, 71 tests
 └── src/
     ├── types.ts                    Message, Conversation, Settings, providers,
     │                               PRESETS, PRICES, ElevenLabs voices
@@ -842,9 +842,9 @@ PASS __tests__/App.test.tsx
 PASS __tests__/VoiceLoop.test.tsx
 
 Test Suites: 9 passed, 9 total
-Tests:       70 passed, 70 total
+Tests:       71 passed, 71 total
 Snapshots:   0 total
-Time:        6.57 s
+Time:        6.91 s
 ```
 
 ```bash
@@ -1042,7 +1042,7 @@ the foreground, and only when you ask a question that needs it).
 
 > Note: `AmitAI-3.2.apk` reports `versionName 3.3` in its manifest (the version
 > bump landed before that build). It is the build from before the wake word and
-> carries `versionCode 6`, same as 3.3, so **install 3.6** unless you are
+> carries `versionCode 6`, same as 3.3, so **install 3.7** unless you are
 > reproducing history. Checksums for every file are in
 > [`releases/README.md`](releases/README.md).
 
