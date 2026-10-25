@@ -1,0 +1,4 @@
+<resources>
+    <!-- Matches the JS splash screen root color so launch has no white flash -->
+    <color name="splash_background">#05060F</color>
+</resources>
