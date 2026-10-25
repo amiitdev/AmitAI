@@ -44,12 +44,28 @@ class AmitSchedulerModule(private val ctx: ReactApplicationContext) :
         try {
             val wanted = parse(json)
             val before = readEntries(ctx)
-            for (e in before) cancel(ctx, e.id)
-            writeEntries(ctx, wanted)
-
             val now = System.currentTimeMillis()
+            val wantedIds = wanted.map { it.id }.toSet()
+
+            // An alarm that is already due within two minutes is not touched.
+            // Opening the app at 07:59:59 must not cancel the 08:00 run and
+            // reschedule it for tomorrow. Deleting the job still wins.
+            val urgent = before
+                .filter { it.at in now..(now + 120_000) && it.id in wantedIds }
+                .associateBy { it.id }
+
+            for (e in before) {
+                if (e.id !in urgent) cancel(ctx, e.id)
+            }
+
+            // Keep the imminent entries (with their original fire time) so the
+            // receiver advances from the true slot instead of skipping a day.
+            val merged = wanted.map { w -> urgent[w.id] ?: w }
+            writeEntries(ctx, merged)
+
             var scheduled = 0
-            for (e in wanted) {
+            for (e in merged) {
+                if (e.id in urgent) continue
                 var at = e.at
                 if (e.repeatMs > 0) {
                     // A stale repeat (app was closed for a while) fires once, soon.

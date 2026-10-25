@@ -246,6 +246,7 @@ posts the answer as a notification.
 | `ScheduleReceiver` | advances the next repetition *before* starting JS — a dead runtime cannot break the chain |
 | `BootReceiver` | rebuilds the whole alarm set after a reboot or app update |
 | app start | recomputes every next run from storage and re-pushes the alarms (self-healing after a timezone change) |
+| imminent-run guard | an alarm due within two minutes is never cancelled by an app launch, so opening the app at 08:00 cannot skip that morning |
 | `ScheduleTaskService` | `HeadlessJsTaskService`, 5-minute budget |
 | notification | the finished answer, big-text style, tap → app |
 | drawer → **Schedules** | next run, pause, delete, and the last result — jobs are never invisible |

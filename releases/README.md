@@ -11,7 +11,7 @@ each). Download from the [Releases page](https://github.com/amiitdev/AmitAI/rele
 | `AmitAI-3.4.apk` | 3.4 | 7 | 101 MB | `f65d816d292d19e406f0664d017826c7` |
 | `AmitAI-3.5.apk` | 3.5 | 8 | 101 MB | `cb2c379838d5e4c4f8c4fe27b8807954` |
 | `AmitAI-3.6.apk` | 3.6 | 9 | 101 MB | `ca0beb275f4d71c09603251d33271046` |
-| `AmitAI-3.7.apk` | 3.7 | 10 | 101 MB | `c5fab49cbae706b617d5fe8adc394976` |
+| `AmitAI-3.7.apk` | 3.7 | 10 | 101 MB | `e25568f99a26fa345dafd6c711c1a722` |
 
 All builds: `com.amit.ai`, min SDK 24, target SDK 36, ABIs `arm64-v8a`,
 `armeabi-v7a`, `x86`, `x86_64`.
@@ -39,8 +39,8 @@ to distribute updates.
 
 ```bash
 md5sum AmitAI-3.7.apk
-# c5fab49cbae706b617d5fe8adc394976  AmitAI-3.7.apk
+# e25568f99a26fa345dafd6c711c1a722  AmitAI-3.7.apk
 
 sha256sum AmitAI-3.7.apk
-# ca2289be1ef1db6667a495817886a4d568c9ad1c2ea246d0c3b5e8f85ee02b3f  AmitAI-3.7.apk
+# 995260faecfa11f0905a467e67bf946112712ea39e0413e6c21455846962c37e  AmitAI-3.7.apk
 ```
