@@ -39,6 +39,9 @@ import {
 import { runAgent, fileToDataUrl, RunHandle, ping } from './src/api/openai';
 import { makeExecutor } from './src/lib/agentTools';
 import { applySchedules, loadSchedules } from './src/lib/schedules';
+import { addNote, formatNotes, loadNotes } from './src/lib/memory';
+import { parseMemoryCommand } from './src/lib/memoryCommands';
+import { buildRecallPreamble } from './src/lib/history';
 import { Bubble } from './src/components/Bubble';
 import { Composer } from './src/components/Composer';
 import { ConversationList } from './src/components/ConversationList';
@@ -330,7 +333,7 @@ function AppInner() {
   /* -------------------------------- send -------------------------------- */
 
   const runCompletion = useCallback(
-    (history: Message[]) => {
+    (history: Message[], recall = '') => {
       const asst = { ...newMessage('assistant', ''), streaming: true, model: settings.model };
       // Name the chat after the first thing the user asked. `history` already
       // contains that message; `c.messages` is still the empty list for a new
@@ -394,7 +397,9 @@ function AppInner() {
           apiKey: settings.apiKey,
           model: settings.model,
           messages: history,
-          systemPrompt: settings.systemPrompt,
+          systemPrompt: recall
+            ? `${settings.systemPrompt}\n\n${recall}`
+            : settings.systemPrompt,
           temperature: settings.temperature,
           maxTokens: settings.maxTokens,
           stream: settings.stream,
@@ -421,11 +426,49 @@ function AppInner() {
     [settings, updateActive],
   );
 
+  /** An answer produced on-device (memory commands), no network involved. */
+  const localExchange = useCallback(
+    (ask: string, answer: string) => {
+      updateActive(c => ({
+        ...c,
+        title: c.messages.length === 0 ? titleFrom(ask) : c.title,
+        messages: [...c.messages, newMessage('user', ask), newMessage('assistant', answer)],
+      }));
+    },
+    [updateActive],
+  );
+
   const send = useCallback(async () => {
     const text = draft.trim();
     const attachments = imageUris.slice(0, MAX_IMAGES);
     // Images with no caption are a valid message now.
     if ((!text && !attachments.length) || streaming || !active) return;
+
+    // Handled on-device: some providers (the local bridge) drop `tools`.
+    const cmd = text && !attachments.length ? parseMemoryCommand(text) : null;
+    if (cmd?.kind === 'remember') {
+      try {
+        const note = await addNote(cmd.text);
+        setDraft('');
+        localExchange(text, `Saved to memory: ${note.text}`);
+        toast('Saved to memory', 'ok');
+      } catch (e: any) {
+        toast(e?.message ?? 'Could not save that', 'error');
+      }
+      return;
+    }
+    if (cmd?.kind === 'recall') {
+      const notes = await loadNotes();
+      const recent = [...notes].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 20);
+      setDraft('');
+      localExchange(
+        text,
+        notes.length
+          ? `From memory (${notes.length} note${notes.length === 1 ? '' : 's'}):\n\n${formatNotes(recent)}`
+          : 'Nothing saved yet. Say “remember that …” and it stays on this phone.',
+      );
+      return;
+    }
 
     if (!settings.apiKey && !settings.baseUrl.includes('11434')) {
       toast('Add your API key first', 'error');
@@ -456,7 +499,8 @@ function AppInner() {
     setImageUris([]);
 
     const history = [...active.messages.filter(m => !m.error), msg];
-    runCompletion(history);
+    const recall = await buildRecallPreamble(text, active.id).catch(() => '');
+    runCompletion(history, recall);
   }, [draft, streaming, active, settings, imageUris, runCompletion, toast]);
 
   const stop = useCallback(() => {
@@ -470,12 +514,14 @@ function AppInner() {
     }));
   }, [updateActive]);
 
-  const regenerate = useCallback(() => {
+  const regenerate = useCallback(async () => {
     if (!active || streaming) return;
     const msgs = [...active.messages];
     while (msgs.length && msgs[msgs.length - 1].role === 'assistant') msgs.pop();
     if (!msgs.length) return;
-    runCompletion(msgs);
+    const lastAsk = [...msgs].reverse().find(m => m.role === 'user')?.content ?? '';
+    const recall = await buildRecallPreamble(lastAsk, active.id).catch(() => '');
+    runCompletion(msgs, recall);
   }, [active, streaming, runCompletion]);
 
   /**

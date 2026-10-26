@@ -373,6 +373,16 @@ export function SettingsScreen({ settings, onChange, onBack, onClearChats }: Pro
           <View style={[styles.knob, settings.toolsSchedules && styles.knobOn]} />
         </TouchableOpacity>
       </View>
+      <View style={styles.row}>
+        <Text style={styles.label}>Chat history search</Text>
+        <TouchableOpacity
+          onPress={() => onChange({ toolsChatHistory: !settings.toolsChatHistory })}
+          style={[styles.toggle, settings.toolsChatHistory && styles.toggleOn]}
+          activeOpacity={0.8}
+        >
+          <View style={[styles.knob, settings.toolsChatHistory && styles.knobOn]} />
+        </TouchableOpacity>
+      </View>
       <Text style={styles.hint}>
         Clipboard lets the model read what you last copied. Memory is a note list you can
         inspect in the drawer. Scheduled jobs run the same tools on an alarm, with the app

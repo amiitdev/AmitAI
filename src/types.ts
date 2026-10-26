@@ -93,6 +93,8 @@ export interface Settings {
   toolsMemory: boolean;
   /** let the model create recurring jobs that answer by notification */
   toolsSchedules: boolean;
+  /** let the model search earlier conversations saved on this phone */
+  toolsChatHistory: boolean;
 
   /* ---- storage ---- */
   /** 'default' = SharedPreferences + AsyncStorage (small, survives keychain loss).
@@ -131,6 +133,7 @@ export const DEFAULT_SETTINGS: Settings = {
   toolsClipboard: true,
   toolsMemory: true,
   toolsSchedules: true,
+  toolsChatHistory: true,
 };
 
 export const ELEVEN_MODEL = 'eleven_flash_v2_5';

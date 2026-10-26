@@ -19,6 +19,13 @@ export interface Note {
   updatedAt: number;
 }
 
+const STOP = new Set([
+  'the', 'and', 'for', 'you', 'your', 'was', 'were', 'are', 'is', 'am', 'did',
+  'does', 'do', 'what', 'when', 'where', 'who', 'why', 'how', 'about', 'tell',
+  'said', 'say', 'me', 'my', 'we', 'our', 'i', 'a', 'an', 'of', 'to', 'in',
+  'on', 'at', 'it', 'this', 'that', 'with', 'from', 'know', 'any', 'please',
+]);
+
 export const MEMORY_KEY = 'amitai:memory:v1';
 export const MEMORY_LIMIT = 500;
 
@@ -113,7 +120,7 @@ export async function searchNotes(query: string, limit = 8): Promise<Note[]> {
   const words = norm(query)
     .toLowerCase()
     .split(/[^a-z0-9@._-]+/)
-    .filter(w => w.length > 1);
+    .filter(w => w.length > 2 && !STOP.has(w));
   if (!words.length) {
     // Newest first. Two notes written in the same millisecond keep their
     // insertion order reversed, so "just added" is always at the top.

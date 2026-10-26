@@ -17,10 +17,10 @@ hands-free voice, an offline “Ok Amit” wake word and a floating bubble — w
 [![React Native](https://img.shields.io/badge/React_Native-0.88-61dafb?style=for-the-badge&logo=react&logoColor=061a23)](https://reactnative.dev)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.2-7f52ff?style=for-the-badge&logo=kotlin&logoColor=white)](https://kotlinlang.org)
 
-![Version](https://img.shields.io/badge/version-3.7-6366f1?style=flat-square)
-![Tests](https://img.shields.io/badge/tests-73_passed-10b981?style=flat-square)
+![Version](https://img.shields.io/badge/version-3.8-6366f1?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-82_passed-10b981?style=flat-square)
 ![TypeScript](https://img.shields.io/badge/tsc-0_errors-3178c6?style=flat-square&logo=typescript&logoColor=white)
-![Tools](https://img.shields.io/badge/on--device_tools-12-a855f7?style=flat-square)
+![Tools](https://img.shields.io/badge/on--device_tools-13-a855f7?style=flat-square)
 
 </div>
 
@@ -28,12 +28,13 @@ hands-free voice, an offline “Ok Amit” wake word and a floating bubble — w
 
 ## ⬇ Download
 
-The newest build is **3.7** (`versionCode 10`). Every APK ever shipped is on the
+The newest build is **3.8** (`versionCode 11`). Every APK ever shipped is on the
 [**Releases page**](https://github.com/amiitdev/AmitAI/releases).
 
 | Version | What changed | Size | Link |
 |---|---|---|---|
-| **3.7** | Share into AmitAI, clipboard + memory tools, 8 images, scheduled jobs | 101 MB | [AmitAI-3.7.apk](https://github.com/amiitdev/AmitAI/releases/download/v3.7/AmitAI-3.7.apk) |
+| **3.8** | memory + past-chat recall that works even on tool-less providers | 101 MB | [AmitAI-3.8.apk](https://github.com/amiitdev/AmitAI/releases/download/v3.8/AmitAI-3.8.apk) |
+| 3.7 | Share into AmitAI, clipboard + memory tools, 8 images, scheduled jobs | 101 MB | [AmitAI-3.7.apk](https://github.com/amiitdev/AmitAI/releases/download/v3.7/AmitAI-3.7.apk) |
 | 3.6 | Storage modes, chat files, latest tools | 101 MB | [AmitAI-3.6.apk](https://github.com/amiitdev/AmitAI/releases/download/v3.6/AmitAI-3.6.apk) |
 | 3.5 | Quota + usage dashboard | 101 MB | [AmitAI-3.5.apk](https://github.com/amiitdev/AmitAI/releases/download/v3.5/AmitAI-3.5.apk) |
 | 3.4 | Barge-in, better voice loop | 101 MB | [AmitAI-3.4.apk](https://github.com/amiitdev/AmitAI/releases/download/v3.4/AmitAI-3.4.apk) |
@@ -118,7 +119,7 @@ clock, clipboard, memory, scheduler) runs locally.
 | | Typical wrapper | AmitAI |
 |---|---|---|
 | Streaming | often fake or chunked-after-complete | real SSE parsed from `XMLHttpRequest.onprogress` |
-| Tools | none, or a server you must host | 12 tools executing on-device |
+| Tools | none, or a server you must host | 13 tools executing on-device |
 | Voice | one button, cloud STT | continuous loop + barge-in + offline wake word |
 | Storage | server account | JSON on the phone, optional `/sdcard/AmitAI` |
 | Provider | one | Gemini, OpenRouter, OpenAI, Ollama, any compatible URL |
@@ -184,6 +185,7 @@ clock, clipboard, memory, scheduler) runs locally.
 | `create_schedule` | natural language → AlarmManager alarm | no |
 | `list_schedules` | jobs + next run + last result | no |
 | `delete_schedule` | cancel one job | no |
+| `search_chats` | every saved conversation, ranked by keyword | no |
 
 The model decides when to call them. Each tool can be switched off in
 Settings → Tools, and there is a page budget (default 3) so a curious model cannot
@@ -256,6 +258,31 @@ posts the answer as a notification.
 > few minutes. Doze can delay a job, and a job needs a working network at fire
 > time. Scheduled answers go to the notification shade — they do not appear as
 > new chat messages.
+
+### 🔁 Memory and past chats without tool support
+
+Not every OpenAI-compatible endpoint forwards `tools` — the phone-local **AmitAI
+Bridge** drops them entirely (its proxy never reads the field). So these are
+handled on-device, with zero network:
+
+| You type | What happens |
+|---|---|
+| “remember that …” | saved to notes and confirmed locally, even if the model saw no tools |
+| “what do you know about me” | lists the note store locally |
+| anything about an earlier chat | matching notes + chat excerpts are **prepended to the system prompt** before the model answers |
+
+```
+"do you remember my bike service?" ──▶ local search of notes + chats
+                                             │
+                                             ▼
+       "Facts the user saved in memory: … December"
+                                             │
+                                             ▼
+                       model: "Your bike service is in December."
+```
+
+Tool-capable providers also get the `search_chats` tool. The history preamble is
+switched off with Settings → Tools → **Chat history search**.
 
 ### 🎙 Voice
 
@@ -700,6 +727,46 @@ permission (asked when you create the first job), no exact-alarm permission
 (banner on the Schedules screen), and battery optimisation (the existing
 wake-word toggle already links to it).
 
+### 8.5 Chat history recall
+
+The complaint that started this: *“my chats are saved on the SD card, but a new
+chat forgets them.”* Root cause was the provider, not storage — the bridge drops
+`tools`, so a `recall` tool could never fire.
+
+The fix has two halves:
+
+| Half | Where | Works with |
+|---|---|---|
+| `search_chats` tool | `agentTools.ts` → `history.ts` | providers that support tool calls |
+| recall preamble | `history.ts` → every request | **any** provider, tool-less included |
+
+The preamble is deliberately boring and local:
+
+```ts
+const [hits, notes] = await Promise.all([
+  searchHistory(query, { excludeConversationId: activeId, limit: 4, maxPerChat: 1 }),
+  searchNotes(query, 5),
+]);
+// notes first, then dated chat excerpts, prepended to the system prompt
+```
+
+Ranking is keyword overlap (length-weighted, long messages damped), stop words
+removed, the current conversation excluded so the question cannot retrieve
+itself. Notes win over chat lines because a note is a fact the user asked to keep.
+
+Verified on the phone (I2305, 3.8, provider = AmitAI Bridge / tool-less):
+
+```
+you (new chat):  when is my bike service due
+AMITAI:          Your bike service is in December.
+```
+
+Before 3.8 the same device answered *“I don't have memory of past chats”*.
+
+**Limits, stated plainly:** keyword matching, not embeddings — synonyms
+(“two-wheeler” vs “bike”) will miss. Only the top 4 excerpts are injected, 320
+chars each, to keep the prompt small. Audio/image-only messages are ignored.
+
 ---
 
 ## 9. File map
@@ -710,7 +777,7 @@ AmitAI/
 ├── index.js                        registers <App/>
 ├── assets/                         icon + splash art
 ├── releases/                       APK index + checksums (binaries live on Releases)
-├── __tests__/                      9 suites, 73 tests
+├── __tests__/                      11 suites, 82 tests
 └── src/
     ├── types.ts                    Message, Conversation, Settings, providers,
     │                               PRESETS, PRICES, ElevenLabs voices
@@ -725,6 +792,8 @@ AmitAI/
     │   ├── assistant.ts            wake word / bubble / permissions bridge
     │   ├── agentTools.ts           tool schemas + executor + page budget
     │   ├── memory.ts               notes: add / search / delete, 500-row cap
+    │   ├── memoryCommands.ts       “remember …” handled on-device, no model needed
+    │   ├── history.ts              past-chat ranking + recall preamble
     │   ├── schedules.ts            parseWhen, cron parser, nextRun, native sync
     │   ├── scheduleTask.ts         headless runner: agent loop → notification
     │   ├── reader.ts               queue between tools and the hidden WebView
@@ -840,12 +909,14 @@ PASS __tests__/Memory.test.ts
 PASS __tests__/Schedule.test.ts
 PASS __tests__/SettingsProviders.test.tsx
 PASS __tests__/App.test.tsx
+PASS __tests__/History.test.ts
+PASS __tests__/MemoryCommands.test.ts
 PASS __tests__/VoiceLoop.test.tsx
 
-Test Suites: 9 passed, 9 total
-Tests:       73 passed, 73 total
+Test Suites: 11 passed, 11 total
+Tests:       82 passed, 82 total
 Snapshots:   0 total
-Time:        14.23 s
+Time:        7.08 s
 ```
 
 ```bash
@@ -873,22 +944,22 @@ What the suites cover:
 `Schedule.test.ts` runs against a frozen clock (Sunday 25 Oct 2026, 06:30), so
 “next Monday at 9pm” is an assertion, not a coin flip.
 
-Build artefacts (APK 3.7):
+Build artefacts (APK 3.8):
 
 ```
-$ apkanalyzer manifest print AmitAI-3.7.apk | head
+$ apkanalyzer manifest print AmitAI-3.8.apk | head
 package="com.amit.ai"
-android:versionCode="10"
-android:versionName="3.7"
+android:versionCode="11"
+android:versionName="3.8"
 android:minSdkVersion="24"
 android:targetSdkVersion="36"
 
-$ unzip -l AmitAI-3.7.apk | grep libvosk
+$ unzip -l AmitAI-3.8.apk | grep libvosk
 8862928  lib/arm64-v8a/libvosk.so
 8279808  lib/armeabi-v7a/libvosk.so
 ...
 
-$ ls -lh AmitAI-3.7.apk
+$ ls -lh AmitAI-3.8.apk
 101M
 ```
 
@@ -915,6 +986,7 @@ $ ls -lh AmitAI-3.7.apk
 | Tools | Clipboard | on | advertise `read_clipboard` |
 | Tools | Memory (notes) | on | advertise `remember` / `recall` / `forget` |
 | Tools | Scheduled jobs | on | advertise `create_schedule` / `list_schedules` / `delete_schedule` |
+| Tools | Chat history search | on | advertise `search_chats` + inject the recall preamble |
 | Web access | Page reader | Fast | Fast = fetch + strip · Browser = hidden WebView |
 | Web access | Pages per answer | 3 | hard budget (1–6) |
 | Voice | Speaking voice | Device | Device TTS or ElevenLabs |
@@ -1033,6 +1105,7 @@ the foreground, and only when you ask a question that needs it).
 
 | Version | Code | Size | Highlights |
 |---|---|---|---|
+| 3.8 | 11 | 101 MB | memory + past-chat recall that works on tool-less providers |
 | 3.7 | 10 | 101 MB | share into AmitAI, clipboard + memory tools, 8-image vision, scheduled jobs |
 | 3.6 | 9 | 101 MB | storage modes, chat-files panel, latest tool set |
 | 3.5 | 8 | 101 MB | weekly usage dashboard, quota hints |
@@ -1066,6 +1139,8 @@ An arm64-only build would be roughly 25–30 MB smaller.
 | Exact alarms need a system toggle (Android 12+) | platform policy for `SCHEDULE_EXACT_ALARM` | in-app banner + one-tap shortcut (done) |
 | A job needs network at fire time | it is a real model request | retry once, then notify the failure (partial: notifies, no retry) |
 | Cron syntax is the classic 5 fields | no seconds/years, as in most cron | add optional seconds field |
+| Recall is keyword matching | no embeddings on a phone-sized budget | optional on-device embedding index |
+| Providers may drop `tools` | the local bridge does | deterministic commands + recall preamble (done in 3.8) |
 | Free models change often | OpenRouter catalogue moves | refresh `OPENROUTER_FREE` |
 | Debug keystore | effortless side-loading | ship a real keystore |
 | No iOS build | Android-native bridges (Vosk, overlay, alarms) | port with platform modules |

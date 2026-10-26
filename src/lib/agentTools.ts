@@ -15,6 +15,7 @@ import {
   removeSchedule,
 } from './schedules';
 import { titleFrom } from '../storage/store';
+import { searchHistory } from './history';
 
 /**
  * The tools the model is allowed to call, and what actually happens when it
@@ -203,6 +204,24 @@ export const TOOL_DEFS: ToolDef[] = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'search_chats',
+      description:
+        'Search every earlier conversation saved on this phone. Use when the user refers to something discussed before: “what did I say about…”, “the bike service thing”, “last week we talked about…”, “do you remember…”. Returns dated excerpts from past chats.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'Words to look for, e.g. “bike service december”.',
+          },
+        },
+        required: ['query'],
+      },
+    },
+  },
 ];
 
 const hostOf = (url: string) => {
@@ -239,6 +258,7 @@ export function makeExecutor(settings: Settings): Executor {
     if (name === 'remember' || name === 'recall' || name === 'forget') return settings.toolsMemory;
     if (name === 'create_schedule' || name === 'list_schedules' || name === 'delete_schedule')
       return settings.toolsSchedules;
+    if (name === 'search_chats') return settings.toolsChatHistory;
     return true;
   });
 
@@ -256,6 +276,7 @@ export function makeExecutor(settings: Settings): Executor {
     if (name === 'create_schedule') return 'Scheduling';
     if (name === 'list_schedules') return 'Reading schedules';
     if (name === 'delete_schedule') return 'Cancelling schedule';
+    if (name === 'search_chats') return 'Searching past chats';
     return name;
   };
 
@@ -436,6 +457,26 @@ export function makeExecutor(settings: Settings): Executor {
       }
       await removeSchedule(hits[0].id);
       return { content: `Cancelled “${hits[0].title}” (${describe(hits[0])}).` };
+    }
+
+    if (name === 'search_chats') {
+      const query = String(args?.query ?? '').trim();
+      if (!query) throw new Error('say what to look for in past chats');
+      const hits = await searchHistory(query, { limit: 6, maxPerChat: 2 });
+      if (!hits.length) {
+        return { content: `No earlier conversation matched “${query}”.` };
+      }
+      return {
+        content:
+          `Earlier conversations matching “${query}”:\n` +
+          hits
+            .map(
+              h =>
+                `- ${new Date(h.date).toLocaleDateString()} · ${h.title} · ${h.role}: ` +
+                h.text.replace(/\s+/g, ' ').slice(0, 400),
+            )
+            .join('\n'),
+      };
     }
 
     throw new Error(`unknown tool ${name}`);
