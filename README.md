@@ -18,7 +18,7 @@ hands-free voice, an offline “Ok Amit” wake word and a floating bubble — w
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.2-7f52ff?style=for-the-badge&logo=kotlin&logoColor=white)](https://kotlinlang.org)
 
 ![Version](https://img.shields.io/badge/version-3.7-6366f1?style=flat-square)
-![Tests](https://img.shields.io/badge/tests-71_passed-10b981?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-73_passed-10b981?style=flat-square)
 ![TypeScript](https://img.shields.io/badge/tsc-0_errors-3178c6?style=flat-square&logo=typescript&logoColor=white)
 ![Tools](https://img.shields.io/badge/on--device_tools-12-a855f7?style=flat-square)
 
@@ -607,7 +607,7 @@ The tool returns the clipboard verbatim (up to 8,000 chars) and says
 ```
 src/lib/memory.ts
   Note { id, text, createdAt, updatedAt }
-  addNote()   dedupes case-insensitively, updates instead of duplicating
+  addNote()   dedupes case/punctuation-insensitively ("Wi-Fi" == "wifi")
   recall()    word-overlap score, recency breaks ties
   forget()    deletes only when exactly one note matches
   cap         500 notes (oldest falls off)
@@ -710,7 +710,7 @@ AmitAI/
 ├── index.js                        registers <App/>
 ├── assets/                         icon + splash art
 ├── releases/                       APK index + checksums (binaries live on Releases)
-├── __tests__/                      9 suites, 71 tests
+├── __tests__/                      9 suites, 73 tests
 └── src/
     ├── types.ts                    Message, Conversation, Settings, providers,
     │                               PRESETS, PRICES, ElevenLabs voices
@@ -843,9 +843,9 @@ PASS __tests__/App.test.tsx
 PASS __tests__/VoiceLoop.test.tsx
 
 Test Suites: 9 passed, 9 total
-Tests:       71 passed, 71 total
+Tests:       73 passed, 73 total
 Snapshots:   0 total
-Time:        6.91 s
+Time:        14.23 s
 ```
 
 ```bash
@@ -867,7 +867,7 @@ What the suites cover:
 | `VoiceAndTheme.test.tsx` | barge-in echo guard, stop words, theme tokens |
 | `VoiceLoop.test.tsx` | the listen → think → speak loop and its timers |
 | `MultiImage.test.ts` | text + N image parts, the 8-image cap, old single-image messages |
-| `Memory.test.ts` | dedupe, ranked search, update/delete, clear, readable formatting |
+| `Memory.test.ts` | dedupe across case/punctuation, ranked search (incl. “wifi” → “Wi-Fi”), update/delete, clear |
 | `Schedule.test.ts` | every supported phrasing, cron maths, next-run rollover, storage round-trip |
 
 `Schedule.test.ts` runs against a frozen clock (Sunday 25 Oct 2026, 06:30), so

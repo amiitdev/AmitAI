@@ -26,6 +26,15 @@ let cache: Note[] | null = null;
 
 const norm = (s: string) => s.replace(/\s+/g, ' ').trim();
 
+/**
+ * Comparison form: case-, space- and punctuation-insensitive.
+ *
+ * "Wi-Fi" and "wifi" are the same fact; so are "e-mail" and "email". Without
+ * this, saying the same thing twice created two rows and `recall("wifi")` could
+ * not find a note written as "Wi-Fi" — both were observed on a real device.
+ */
+const fold = (s: string) => norm(s).toLowerCase().replace(/[^a-z0-9]+/g, '');
+
 export async function loadNotes(): Promise<Note[]> {
   if (cache) return cache;
   try {
@@ -55,7 +64,11 @@ export async function addNote(text: string): Promise<Note> {
   if (!clean) throw new Error('nothing to remember');
   const list = await loadNotes();
   const now = Date.now();
-  const same = list.find(n => norm(n.text).toLowerCase() === clean.toLowerCase());
+  const key = fold(clean);
+  const same = list.find(n => {
+    const k = fold(n.text);
+    return k.length > 0 && k === key;
+  });
   if (same) {
     same.updatedAt = now;
     await persist(list);
@@ -111,8 +124,16 @@ export async function searchNotes(query: string, limit = 8): Promise<Note[]> {
       .map(x => x.n);
   }
   const scored = list.map(n => {
-    const hay = n.text.toLowerCase();
-    const score = words.reduce((sum, w) => sum + (hay.includes(w) ? 1 : 0), 0);
+    const hayRaw = norm(n.text).toLowerCase();
+    const hayFold = fold(n.text);
+    const score = words.reduce((sum, w) => {
+      const wFold = fold(w);
+      // plain substring first (fast, exact), then the punctuation-insensitive
+      // form so "wifi" still finds "Wi-Fi"
+      if (hayRaw.includes(w)) return sum + 1;
+      if (wFold.length > 1 && hayFold.includes(wFold)) return sum + 1;
+      return sum;
+    }, 0);
     return { n, score };
   });
   return scored

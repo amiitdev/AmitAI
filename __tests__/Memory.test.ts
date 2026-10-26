@@ -34,6 +34,21 @@ test('saving the same sentence twice updates instead of duplicating', async () =
   expect(list).toHaveLength(1);
 });
 
+test('case, punctuation and hyphens do not create a second row', async () => {
+  const a = await addNote('Home Wi-Fi password is on the router sticker');
+  const b = await addNote('home wifi password is on the router sticker!');
+  expect(b.id).toBe(a.id);
+  expect(await loadNotes()).toHaveLength(1);
+});
+
+test('search crosses the hyphen: "wifi" finds "Wi-Fi"', async () => {
+  await addNote('The Wi-Fi extender lives in the hall');
+  await addNote('Bike chain needs oil');
+  const hits = await searchNotes('wifi extender');
+  expect(hits).toHaveLength(1);
+  expect(hits[0].text).toContain('Wi-Fi');
+});
+
 test('search ranks by how many words match', async () => {
   await addNote('Home wifi password lives in the router cupboard');
   await addNote('The car needs new wipers');
