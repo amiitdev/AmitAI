@@ -7,20 +7,22 @@
 ### Your own AI assistant — your code, your key, your phone.
 
 A native Android AI assistant built with **React Native + Kotlin**.
-Streaming chat, twelve on-device tools, long-term memory, multi-image vision,
+Streaming chat, thirteen on-device tools, long-term memory, multi-image vision,
 scheduled jobs that answer while the app is closed (cron in plain words),
-hands-free voice, an offline “Ok Amit” wake word and a floating bubble — with
-**no telemetry, no account, no middleman**.
+hands-free voice, an offline “Ok Amit” wake word, a floating bubble — and now an
+**MCP server** so the opencode agent on the same phone can call AmitAI's own
+memory, chat search, weather and clock — with **no telemetry, no account, no middleman**.
 
 [![Download](https://img.shields.io/badge/⬇_Download-APK-6366f1?style=for-the-badge)](https://github.com/amiitdev/AmitAI/releases/latest)
 [![Platform](https://img.shields.io/badge/Android-7.0%2B-3ddc84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/amiitdev/AmitAI/releases/latest)
 [![React Native](https://img.shields.io/badge/React_Native-0.88-61dafb?style=for-the-badge&logo=react&logoColor=061a23)](https://reactnative.dev)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.2-7f52ff?style=for-the-badge&logo=kotlin&logoColor=white)](https://kotlinlang.org)
 
-![Version](https://img.shields.io/badge/version-3.8-6366f1?style=flat-square)
+![Version](https://img.shields.io/badge/version-3.9-6366f1?style=flat-square)
 ![Tests](https://img.shields.io/badge/tests-82_passed-10b981?style=flat-square)
 ![TypeScript](https://img.shields.io/badge/tsc-0_errors-3178c6?style=flat-square&logo=typescript&logoColor=white)
 ![Tools](https://img.shields.io/badge/on--device_tools-13-a855f7?style=flat-square)
+![MCP](https://img.shields.io/badge/MCP_tools-5-f59e0b?style=flat-square)
 
 </div>
 
@@ -28,12 +30,13 @@ hands-free voice, an offline “Ok Amit” wake word and a floating bubble — w
 
 ## ⬇ Download
 
-The newest build is **3.8** (`versionCode 11`). Every APK ever shipped is on the
+The newest build is **3.9** (`versionCode 12`). Every APK ever shipped is on the
 [**Releases page**](https://github.com/amiitdev/AmitAI/releases).
 
 | Version | What changed | Size | Link |
 |---|---|---|---|
-| **3.8** | memory + past-chat recall that works even on tool-less providers | 101 MB | [AmitAI-3.8.apk](https://github.com/amiitdev/AmitAI/releases/download/v3.8/AmitAI-3.8.apk) |
+| **3.9** | **opencode MCP server** — the CLI agent on your phone can call AmitAI's memory, chat search, weather and clock; foreground service keeps it alive in the background | 101 MB | [AmitAI-3.9.apk](https://github.com/amiitdev/AmitAI/releases/download/v3.9/AmitAI-3.9.apk) |
+| 3.8 | memory + past-chat recall that works even on tool-less providers | 101 MB | [AmitAI-3.8.apk](https://github.com/amiitdev/AmitAI/releases/download/v3.8/AmitAI-3.8.apk) |
 | 3.7 | Share into AmitAI, clipboard + memory tools, 8 images, scheduled jobs | 101 MB | [AmitAI-3.7.apk](https://github.com/amiitdev/AmitAI/releases/download/v3.7/AmitAI-3.7.apk) |
 | 3.6 | Storage modes, chat files, latest tools | 101 MB | [AmitAI-3.6.apk](https://github.com/amiitdev/AmitAI/releases/download/v3.6/AmitAI-3.6.apk) |
 | 3.5 | Quota + usage dashboard | 101 MB | [AmitAI-3.5.apk](https://github.com/amiitdev/AmitAI/releases/download/v3.5/AmitAI-3.5.apk) |
@@ -74,7 +77,7 @@ or the phone-local **AmitAI Bridge** (`http://127.0.0.1:8130/v1`).
 5. [Architecture](#5-architecture)
 6. [How streaming and tool calls work](#6-how-streaming-and-tool-calls-work)
 7. [The voice stack](#7-the-voice-stack)
-8. [Share, clipboard, memory and schedules](#8-share-clipboard-memory-and-schedules)
+8. [Share, clipboard, memory, schedules and MCP](#8-share-clipboard-memory-schedules-and-the-opencode-mcp-server)
 9. [File map](#9-file-map)
 10. [Build from source](#10-build-from-source)
 11. [Checks and real output](#11-checks-and-real-output)
@@ -86,6 +89,7 @@ or the phone-local **AmitAI Bridge** (`http://127.0.0.1:8130/v1`).
 17. [Known limits and roadmap](#17-known-limits-and-roadmap)
 18. [Why this is not a ChatGPT clone](#18-why-this-is-not-a-chatgpt-clone)
 19. [Credits](#19-credits)
+20. [Everything AmitAI can do — with examples](#20-everything-amitai-can-do--with-examples)
 
 ---
 
@@ -109,7 +113,8 @@ clock, clipboard, memory, scheduler) runs locally.
           ├── hidden WebView    (JS-heavy pages)
           ├── Android clipboard (only when asked)
           ├── notes + schedules (JSON on the phone)
-          └── Vosk 40 MB model  (offline wake word)
+          ├── Vosk 40 MB model  (offline wake word)
+          └── MCP :8140         (opencode agent calls these tools)
 
    Share sheet ──▶ text / 8 images        AlarmManager ──▶ headless run ──▶ notification
 ```
@@ -283,6 +288,40 @@ handled on-device, with zero network:
 
 Tool-capable providers also get the `search_chats` tool. The history preamble is
 switched off with Settings → Tools → **Chat history search**.
+
+### 🔌 opencode MCP server (new in 3.9)
+
+A second AI lives on the same phone: the **opencode CLI** in Termux. It cannot use
+AmitAI's tools directly — its API takes text, not tool definitions — so AmitAI
+publishes its tools the way opencode *does* understand them: an **MCP server on
+loopback**.
+
+| Piece | Detail |
+|---|---|
+| Endpoint | `http://127.0.0.1:8140/mcp` — loopback only, nothing on your Wi-Fi can reach it |
+| Auth | random `Bearer` token generated once, shown in Settings |
+| Tools exposed | `remember` · `recall` · `search_chats` · `get_weather` · `get_time` |
+| Transport | plain JSON-RPC over HTTP (`initialize`, `tools/list`, `tools/call`) |
+| Kept alive by | a **foreground service** (`specialUse`) — otherwise Android freezes the app and every agent call times out |
+| Setup | Settings → **opencode MCP** → *Copy opencode.json snippet* → paste under `"mcp"` → restart opencode |
+
+```
+  opencode (Termux)                    AmitAI
+ ┌──────────────┐  1 tools/list      ┌────────────────────┐
+ │ the brain    │ ─────────────────▶ │  note store        │
+ │ (any model)  │  2 menu of 5 tools │  chat history      │
+ │              │ ◀───────────────── │  weather / clock   │
+ │              │  3 tools/call      │                    │
+ │              │ ─────────────────▶ │  writes the note   │
+ │              │  4 result          │  (shared prefs)    │
+ └──────────────┘ ◀───────────────── └────────────────────┘
+        loopback :8140 · Bearer token · app can stay backgrounded
+```
+
+The brain stays opencode's; AmitAI supplies only the facts and the writes. Ask the
+agent *“remember my bike service is in December”* and the note appears in the
+app's Memory tab. Next session, *“when is my bike service?”* calls `recall` and
+the agent answers **December** — across sessions, which plain opencode cannot do.
 
 ### 🎙 Voice
 
@@ -579,7 +618,7 @@ talking. Single-word commands (`stop`, `wait`, `no`, `cancel`, …) always inter
 
 ---
 
-## 8. Share, clipboard, memory and schedules
+## 8. Share, clipboard, memory, schedules and the opencode MCP server
 
 Four features that all share one rule: **they run on the phone, and you can see
 everything they store.**
@@ -767,6 +806,142 @@ Before 3.8 the same device answered *“I don't have memory of past chats”*.
 (“two-wheeler” vs “bike”) will miss. Only the top 4 excerpts are injected, 320
 chars each, to keep the prompt small. Audio/image-only messages are ignored.
 
+### 8.6 The opencode tool server (MCP)
+
+#### Why it exists
+
+The AmitAI Bridge forwards one text prompt to opencode and streams the answer
+back. What it *cannot* do is hand over tools: opencode's message API accepts
+text/parts, not a `tools` array. So the bridge can never say “here are the app's
+thirteen tools”.
+
+But opencode **does** have an extension point — MCP servers — and it will happily
+connect to one over HTTP. So the direction is inverted: instead of pushing tools
+into opencode, AmitAI **serves** them, and the agent pulls.
+
+| Question | Answer |
+|---|---|
+| Can the bridge give AmitAI's tools to opencode? | **No** — the API has no field for it |
+| Can opencode use tools at all? | **Yes** — its own file/bash tools, and any **MCP server** in `opencode.json` |
+| So how do the app's tools reach it? | the app *is* the MCP server: `http://127.0.0.1:8140/mcp` |
+| Why not just let the bridge do it? | clipboard, alarms and notes live inside the app process — only the app can execute them |
+
+#### The protocol, in three messages
+
+MCP over HTTP here is just JSON-RPC with a token. Verified on the phone:
+
+```bash
+# 1 — handshake
+POST /mcp  {"jsonrpc":"2.0","id":1,"method":"initialize"}
+→ {"result":{"protocolVersion":"2024-11-05",
+             "capabilities":{"tools":{}},
+             "serverInfo":{"name":"amitai-tools","version":"1.0.0"}}}
+
+# 2 — what can you do?
+POST /mcp  {"jsonrpc":"2.0","id":1,"method":"tools/list"}
+→ {"result":{"tools":[
+     {"name":"remember",     "description":"Save a durable note on the user's phone …"},
+     {"name":"recall",       "description":"Search notes saved on this phone …"},
+     {"name":"search_chats", "description":"Search the user's earlier AmitAI conversations …"},
+     {"name":"get_weather",  "description":"Current weather for a city (Open-Meteo, no key) …"},
+     {"name":"get_time",     "description":"Current date and time …"}]}}
+
+# 3 — do it
+POST /mcp  {"jsonrpc":"2.0","id":9,"method":"tools/call",
+            "params":{"name":"remember","arguments":{"text":"bike service is in December"}}}
+→ {"result":{"content":[{"type":"text",
+      "text":"Saved to memory: bike service is in December"}]}}
+```
+
+Real answers from the device, one line each:
+
+```
+remember      Saved to memory: MCP check: written from the opencode agent, not the app UI
+recall        - MCP check: written from the opencode agent, not the app UI
+              - MCP test: notes can be written by the opencode agent
+get_time      Mon, 26 Oct 2026 13:17 (GMT+05:30)
+get_weather   Nagpur, India: 32.5°C (feels 33.3°C), humidity 31%, wind 10.2 km/h, code 0.
+search_chats  No earlier conversation matched "bike service".
+```
+
+The `remember` call is the interesting one: it wrote into the app's own note
+store, and the note then appeared in **drawer → Memory** at `10/26/2026, 1:17:52 PM`
+with a delete button — written by the agent, never typed by the user.
+
+#### The foreground service (why 3.9 needed it)
+
+The first implementation started the server from `MainApplication`. It worked
+perfectly while the app was open and failed in the only situation that matters —
+when the user is inside opencode, so AmitAI is *not* the app on screen:
+
+```
+   app in foreground   → 200 in 22 ms
+   app backgrounded    → port still LISTEN, every call http_code=000 after 15 s
+```
+
+Android freezes a backgrounded app to save battery. The listening socket survives
+(the kernel keeps it), but no thread runs to `accept()` — so the client connects
+and then waits forever. A **foreground service** exempts the process from that
+freezer, which is exactly what a tool server needs.
+
+| Piece | Detail |
+|---|---|
+| `McpService.kt` | foreground service, `foregroundServiceType="specialUse"`, `START_STICKY` |
+| Notification | low importance, “AmitAI tools ready”, ongoing, with a **Stop** action |
+| Permission | `FOREGROUND_SERVICE` + `FOREGROUND_SERVICE_SPECIAL_USE` |
+| Toggle | Settings → opencode MCP → **Keep running in background** (default **on**) |
+| After a reboot | `BootReceiver` restarts it when the toggle was on |
+| Upgrade race | if the old process still holds `:8140` after an update, the server retries the bind 5× over ~7 s instead of dying silently |
+| Cost | one notification + an idle loopback socket; no wake lock |
+
+Measured on the iQOO I2305 after the fix:
+
+```
+home + 25 s             → http=200  time=0.022 s
+screen off + 60 s       → {"result": … "Mon, 26 Oct 2026 13:40 (GMT+05:30)"}
+after reinstall + 20 s  → http=200  time=0.011 s
+screen off + 180 s      → all five tools answered (remember / recall /
+                          get_time / get_weather / search_chats)
+```
+
+For comparison, the same call before the service existed:
+
+```
+app backgrounded → http_code=000 after 15 s (socket open, nobody reading)
+```
+
+#### Setup, end to end
+
+1. Open AmitAI → ☰ → **Settings** → scroll to **opencode MCP**.
+2. Confirm it says *listening · background service on* (and switch the toggle on if not).
+3. Tap **Copy opencode.json snippet**. It copies exactly this, with your token:
+
+   ```json
+   {
+     "mcp": {
+       "amitai": {
+         "type": "remote",
+         "url": "http://127.0.0.1:8140/mcp",
+         "enabled": true,
+         "headers": { "Authorization": "Bearer <your token>" }
+       }
+     }
+   }
+   ```
+
+4. In Termux, paste it **inside** the existing `"mcp"` object of
+   `~/.config/opencode/opencode.json` (alongside `gmail`, `composio`, `yt-notes`).
+5. Restart opencode. Ask *“use the AmitAI tools to check the weather in Nagpur”* —
+   the tool should appear in the transcript as `amitai_get_weather`.
+
+#### Limits, stated plainly
+
+- **Loopback only.** `127.0.0.1` — your laptop and other devices cannot call it. That is deliberate: the token protects against other apps on the phone, not against the network.
+- **Only five tools.** Notes, chat search, weather, clock. Clipboard, schedules and the UI are *not* exposed — they need app-side intent and user presence.
+- **The app must be installed and the service on.** Kill it in Settings → Apps, and the endpoint disappears.
+- **The brain is still opencode's model.** MCP gives it facts, not intelligence; a quota-limited free model stays quota-limited.
+- **Nothing is written to disk by MCP itself.** `remember` appends to the same note store the Memory screen shows, so you can audit and delete it.
+
 ---
 
 ## 9. File map
@@ -832,7 +1007,10 @@ android/app/src/main/java/com/amit/ai/
 ├── AssistantBus.kt / AssistantPrefs.kt
 ├── WakeWordService.kt              Vosk foreground listener
 ├── BubbleService.kt                draggable overlay
-├── BootReceiver.kt                 restore wake + rebuild alarms after reboot
+├── McpService.kt                   foreground service that owns the MCP socket
+├── AmitMcpServer.kt                HTTP/JSON-RPC server on 127.0.0.1:8140
+├── McpTools.kt                     the five tools the agent can call
+├── BootReceiver.kt                 restore wake + MCP server + rebuild alarms
 └── MicGate.kt                      mic arbitration
 ```
 
@@ -921,10 +1099,10 @@ Time:        7.08 s
 
 ```bash
 $ npx eslint .
-✖ 18 problems (0 errors, 18 warnings)
+✖ 19 problems (0 errors, 19 warnings)
 ```
 
-The 18 warnings are the project's existing inline-style/`no-void` style nits —
+The 19 warnings are the project's existing inline-style/`no-void` style nits —
 there are **no errors**.
 
 What the suites cover:
@@ -944,22 +1122,22 @@ What the suites cover:
 `Schedule.test.ts` runs against a frozen clock (Sunday 25 Oct 2026, 06:30), so
 “next Monday at 9pm” is an assertion, not a coin flip.
 
-Build artefacts (APK 3.8):
+Build artefacts (APK 3.9):
 
 ```
-$ apkanalyzer manifest print AmitAI-3.8.apk | head
+$ apkanalyzer manifest print AmitAI-3.9.apk | head
 package="com.amit.ai"
-android:versionCode="11"
-android:versionName="3.8"
+android:versionCode="12"
+android:versionName="3.9"
 android:minSdkVersion="24"
 android:targetSdkVersion="36"
 
-$ unzip -l AmitAI-3.8.apk | grep libvosk
+$ unzip -l AmitAI-3.9.apk | grep libvosk
 8862928  lib/arm64-v8a/libvosk.so
 8279808  lib/armeabi-v7a/libvosk.so
 ...
 
-$ ls -lh AmitAI-3.8.apk
+$ ls -lh AmitAI-3.9.apk
 101M
 ```
 
@@ -987,6 +1165,9 @@ $ ls -lh AmitAI-3.8.apk
 | Tools | Memory (notes) | on | advertise `remember` / `recall` / `forget` |
 | Tools | Scheduled jobs | on | advertise `create_schedule` / `list_schedules` / `delete_schedule` |
 | Tools | Chat history search | on | advertise `search_chats` + inject the recall preamble |
+| opencode MCP | Endpoint + token | generated | `http://127.0.0.1:8140/mcp` and its `Bearer` token |
+| opencode MCP | Keep running in background | **on** | foreground service keeps the endpoint answering when the app is not on screen |
+| opencode MCP | Copy opencode.json snippet | — | copies the `amitai` MCP block ready to paste |
 | Web access | Page reader | Fast | Fast = fetch + strip · Browser = hidden WebView |
 | Web access | Pages per answer | 3 | hard budget (1–6) |
 | Voice | Speaking voice | Device | Device TTS or ElevenLabs |
@@ -1085,6 +1266,7 @@ write never throws.
 | `RECORD_AUDIO` | voice input and wake word | first mic tap / enabling wake word |
 | `POST_NOTIFICATIONS` | the “Ok Amit is listening” card and scheduled answers | Android 13+, on enabling / first job |
 | `FOREGROUND_SERVICE` + `…_MICROPHONE` | keep the listener alive | enabling wake word |
+| `FOREGROUND_SERVICE` + `…_SPECIAL_USE` | keep the MCP endpoint answering while the app is backgrounded | starts with the app (toggle in Settings) |
 | `SYSTEM_ALERT_WINDOW` | floating bubble | only if you turn the bubble on |
 | `RECEIVE_BOOT_COMPLETED` | restore the listener **and rebuild scheduled alarms** after reboot | install |
 | `SCHEDULE_EXACT_ALARM` | fire a job at 08:00 and not 08:14 | Android 12+ toggle, opened from the Schedules banner |
@@ -1105,6 +1287,7 @@ the foreground, and only when you ask a question that needs it).
 
 | Version | Code | Size | Highlights |
 |---|---|---|---|
+| 3.9 | 12 | 101 MB | **opencode MCP server**: the CLI agent on the phone can call AmitAI's memory, chat search, weather and clock; foreground service keeps it answering in the background |
 | 3.8 | 11 | 101 MB | memory + past-chat recall that works on tool-less providers |
 | 3.7 | 10 | 101 MB | share into AmitAI, clipboard + memory tools, 8-image vision, scheduled jobs |
 | 3.6 | 9 | 101 MB | storage modes, chat-files panel, latest tool set |
@@ -1143,6 +1326,10 @@ An arm64-only build would be roughly 25–30 MB smaller.
 | Providers may drop `tools` | the local bridge does | deterministic commands + recall preamble (done in 3.8) |
 | Free models change often | OpenRouter catalogue moves | refresh `OPENROUTER_FREE` |
 | Debug keystore | effortless side-loading | ship a real keystore |
+| MCP endpoint is loopback-only | it is a phone-local tool server, not a LAN API | optional LAN binding behind an explicit allow-list |
+| MCP exposes 5 of the 13 tools | clipboard, alarms and the UI need app-side context/presence | expose more once a safe remote-trigger exists |
+| MCP needs the app installed and the service on | the socket lives in the app process | nothing to do — that is the design |
+| An agent call cannot wake a stopped app | Android will not let a socket resurrect a killed process | the foreground service is the supported answer (done in 3.9) |
 | No iOS build | Android-native bridges (Vosk, overlay, alarms) | port with platform modules |
 
 ---
@@ -1185,6 +1372,270 @@ and a business entity, not code.
 
 Built and tested on a real **iQOO I2305** (Android 16, API 36, arm64-v8a),
 with the laptop (Linux Mint, kernel 6.8) as the Ollama and bridge host.
+
+---
+
+## 20. Everything AmitAI can do — with examples
+
+One page, no jargon. Every row below is something the app does **today**.
+**Say** = type or speak it. **Tap** = press it in the UI.
+If a feature needs a switch, it says which one.
+
+### 20.1 Chat basics
+
+| You can… | Do this | What happens |
+|---|---|---|
+| Ask anything | Say: *“explain VLAN tagging with a small example”* | answer streams in token by token |
+| Stop a long answer | Tap ■ in the composer | request aborts, the partial answer stays |
+| Try again | Tap **regenerate** under a reply | same question, same context, fresh answer |
+| Copy an answer | Tap **copy** | whole reply to the clipboard |
+| Share an answer | Android share sheet | send it to WhatsApp / Notes / anywhere |
+| Copy one code block | Tap the copy icon on the block | only that snippet is copied |
+| Keep a chat | — | every chat is saved automatically |
+| Name it | Drawer → ⋯ → **rename** | your title replaces the auto one |
+| Auto title | — | the first line you send becomes the title |
+| Pin an important chat | Drawer → ⋯ → **pin** | stays at the top |
+| Delete a chat | Drawer → ⋯ → **delete** | gone, no undo prompt |
+| Find an old chat | Drawer → **Search chats** | searches every message, not just titles |
+| Start clean | Drawer → **New chat** | new conversation, empty context |
+| See the cost | under each reply | `6 tok`, model name, estimated $ |
+| Understand a failure | — | 401 / 402 / 429 / offline are explained in plain words |
+
+Example:
+
+```
+you:   summarise the OSI model in 7 bullets
+AMITAI:  • Physical — cables, voltages …
+         (arrives word by word; ■ stops it; regenerate re-asks)
+```
+
+### 20.2 Images (vision)
+
+| You can… | Do this | What happens |
+|---|---|---|
+| Ask about one photo | Tap **+** → pick a photo → ask *“what is wrong in this error?”* | the image is sent as an image part |
+| Ask about many photos | pick up to **8** | all eight go in one message |
+| Compare them | *“what changed between these two screenshots?”* | the model sees all parts in order |
+| Share a photo straight in | Gallery → Share → **AmitAI** | lands in the composer as an attachment |
+| Share several at once | select 8 in Gallery → Share → **AmitAI** | all become attachments |
+
+Images are converted to data URLs at send time and never stored in the chat file.
+
+### 20.3 Web answers (with sources)
+
+| You can… | Say | What happens |
+|---|---|---|
+| Get current facts | *“what's the latest Android version?”* | `web_search` (DuckDuckGo, no key) |
+| Have it read the page | *“open the top result and summarise it”* | `open_page` → text extracted |
+| Read a JavaScript-heavy site | Settings → Page reader → **Browser** | hidden WebView renders it |
+| Limit the spend | Settings → **Pages per answer** (default 3) | hard cap on pages read |
+| See where it got it | — | host chips under the answer |
+| Turn it off completely | Settings → Tools → **Web search / Open pages** | the tool is not advertised at all |
+
+```
+you:   what changed in the latest React Native release?
+AMITAI: … answer, with chips: reactnative.dev · github.com
+```
+
+### 20.4 Memory that survives restarts
+
+| You can… | Say / tap | What happens |
+|---|---|---|
+| Save a fact | *“remember my bike service is in December”* | note written to the phone |
+| Ask it back | *“when is my bike service?”* | `recall` finds it (works in a new chat) |
+| Forget one | *“forget my bike service note”* | `forget` deletes it (asks if several match) |
+| See everything it knows | ☰ → **Memory** | every note, with a timestamp and ✕ |
+| Add a note by hand | Memory → *“Add a note yourself…”* | typed notes and AI notes live together |
+| Delete everything | Memory → 🗑 | clears the list |
+| Works with tool-less providers too | — | “remember …” is handled on-device, no model call |
+| Search only memory | *“what do you know about me?”* | lists saved notes |
+
+```
+you:   remember my bike service will be in December
+AMITAI: Saved to memory.
+       ── next day, new chat ──
+you:   when is my bike service?
+AMITAI: In December.
+```
+
+### 20.5 Past conversations as context
+
+| You can… | Say | What happens |
+|---|---|---|
+| Reference an old chat | *“what did we decide about the bridge?”* | `search_chats` ranks your saved conversations |
+| Works without tools | same question | the best 4 excerpts are prepended to the prompt |
+| Turn it off | Settings → Tools → **Chat history search** | no tool, no preamble |
+
+### 20.6 Scheduled jobs (an alarm that answers)
+
+| You can… | Say | What happens |
+|---|---|---|
+| Daily briefing | *“tell me the weather every day at 8 am”* | real `AlarmManager` alarm, fires at 08:00 |
+| Weekly habit | *“remind me every Monday at 9pm to plan the week”* | repeats weekly |
+| Weekdays only | *“weekdays at 7:30 give me the news”* | Mon–Fri |
+| Every N hours | *“check the news every 2 hours”* | interval job |
+| One-off | *“tomorrow at 7pm check the match score”* | fires once |
+| Raw cron | *“schedule 30 7 * * 1-5 …”* | classic 5-field cron |
+| No time given | *“remind me to water the plants”* | defaults to 09:00 and tells you so |
+| See all jobs | ☰ → **Schedules** | next run, pause, delete, last result |
+| Pause one | Schedules → pause | alarm cancelled, job kept |
+| Stop one | *“delete the 8am weather job”* | `delete_schedule` cancels the alarm |
+| Exact timing | Schedules banner → **Alarms & reminders** | one tap to the Android toggle |
+
+At fire time the phone wakes a **Headless JS task** — no app on screen — runs the
+same agent loop (tools included) and posts the answer as a notification. Tapping
+the notification opens AmitAI.
+
+### 20.7 Voice
+
+| You can… | Do this | What happens |
+|---|---|---|
+| Dictate | Tap 🎤 | words appear while you speak (partial results) |
+| Read answers aloud | Tap **speak** under a reply | Android TTS, offline |
+| Change the speed | Settings → Speaking speed | 0.5× – 2.0× |
+| Use a cloud voice | Settings → ElevenLabs + key | 6 free-tier voices (`eleven_flash_v2_5`) |
+| Test a voice | Settings → **Test this voice** | speaks one sample sentence |
+| Talk hands-free | Settings/voice mode | listen → think → speak → listen loop |
+| Interrupt it | just talk over it | **barge-in** cuts the speech immediately |
+| Stop by voice | say *“stop”*, *“wait”*, *“no”*, *“cancel”* | instant stop, no wake word needed |
+| Avoid hearing itself | — | echo guard ignores the TTS audio it just played |
+
+### 20.8 “Ok Amit” and the floating bubble
+
+| You can… | Do this | What happens |
+|---|---|---|
+| Wake by voice | Settings → **Wake word** → download the 40 MB Vosk model | offline listener, no internet needed |
+| Choose when it listens | **Charging / screen off** · **Always** · **Paused** | battery-aware default |
+| Get a floating button | Settings → **Floating bubble** (needs overlay permission) | draggable “A”, tap → voice mode |
+| Survive a reboot | enable either one | `BootReceiver` restores it |
+| Never fight over the mic | — | the in-app mic always wins (`MicGate`) |
+
+### 20.9 Getting text into the app
+
+| Source | How | Result |
+|---|---|---|
+| Any app's share sheet | Share → **AmitAI** | text lands in the composer |
+| Selected text | select → ⋮ → **AmitAI** (*Process text*) | same, without leaving the app you were in |
+| Your clipboard | *“summarise what I copied”* | `read_clipboard` reads it once, on demand |
+| A photo or eight | Gallery → Share → **AmitAI** | attachments in the composer |
+
+There is no background clipboard watcher — the clipboard is read only when a
+reply you asked for calls the tool.
+
+### 20.10 Models and providers
+
+| You can… | Do this | What happens |
+|---|---|---|
+| Use Gemini / OpenRouter / OpenAI | tap a provider chip | base URL, model and key hint are filled in |
+| Use any compatible server | paste a Base URL | Ollama, LM Studio, vLLM, a gateway, your own |
+| Use a local model | `http://<laptop-ip>:11434/v1` | nothing leaves your home network |
+| Use the phone-local bridge | `http://127.0.0.1:8130/v1` | opencode on the phone answers |
+| Keep several keys | switch providers and paste each key | each key is stored per provider |
+| See what a server really serves | **Test connection** | `GET /models` → a live list |
+| Pick from free models | Settings → free-model catalogue | 6 hand-tested OpenRouter models with notes |
+| Tune the style | Temperature · Max tokens · Stream | 0–2, reply cap, streaming on/off |
+| Ask for more reasoning | Reasoning effort `low/medium/high` | only sent to reasoning models |
+| Change the personality | **Persona** → Code reviewer / Tutor / Network engineer / Editor | replaces the system prompt |
+| Write your own | Settings → System prompt | sent as the `system` message |
+
+### 20.11 Cost, quota and troubleshooting
+
+| You can… | Where | What it shows |
+|---|---|---|
+| See this week | ☰ → Settings → **Usage this week** | requests, input/output tokens, estimated $ |
+| See today's free quota | model picker | `Quota: 7/20 used today` |
+| Know when it resets | model picker | `⛔ resets in 12 min` (parsed from the 429 body) |
+| Reproduce a 429 offline | Diagnostics → **Simulate 429** | exercises the quota UI with no network |
+| Start counting again | Diagnostics → **Reset counters** | clears quota + usage |
+
+### 20.12 Look and feel
+
+| Theme | Look |
+|---|---|
+| **Midnight OLED** | pure black, electric indigo — best on AMOLED |
+| **Tokyo Night** | deep navy, neon cyan and lavender |
+| **Cyber Obsidian** | carbon black, cyber emerald |
+
+Plus an animated splash (ken-burns + spring logo), haptics on send, and a composer
+that lifts by the real keyboard height (edge-to-edge).
+
+### 20.13 Storage, files and backups
+
+| You can… | Do this | What happens |
+|---|---|---|
+| Keep chats small and safe | default | SharedPreferences + AsyncStorage |
+| Keep a huge history | Settings → **Move to `/sdcard/AmitAI`** | one JSON store you can back up |
+| See where it lives | Settings → **Chat files** | folder path, free space, all-files grant |
+| Never lose a write | — | past ~1.5 MB the oldest replies are stubbed, never a failed save |
+| Upgrade safely | — | new settings merge over defaults, so nothing comes back `undefined` |
+
+The MCP token also lives here (`SharedPreferences amitai:mcp_token`), generated once.
+
+### 20.14 The opencode MCP server (3.9)
+
+| You can… | Do this | What happens |
+|---|---|---|
+| Let the CLI agent use your notes | Settings → **Copy opencode.json snippet** → paste into `~/.config/opencode/opencode.json` → restart opencode | agent sees `remember`, `recall`, `search_chats`, `get_weather`, `get_time` |
+| Ask from Termux | *“use the AmitAI tools to check the weather in Nagpur”* | the tool call appears in the transcript |
+| Save across sessions | *“remember my tyre changed in March”* | note appears in ☰ → **Memory** |
+| Keep it alive in the background | Settings → **Keep running in background** (default on) | foreground service + “AmitAI tools ready” notification |
+| Turn it off | same toggle, or **Stop** in the notification | port `8140` closes |
+| Check it is healthy | Settings → opencode MCP | URL, token, *listening · background service on* |
+
+```
+Termux $ opencode
+> remember: my bike service is in December
+  ⚙ amitai_remember {"text":"my bike service is in December"}
+  "Saved."
+
+> when is my bike service?          # brand-new session
+  ⚙ amitai_recall {"query":"bike service"}
+  "In December — per your note."
+```
+
+### 20.15 What it deliberately does not do
+
+| Not supported | Why |
+|---|---|
+| Image generation | chat completions cannot generate images |
+| Cloud sync / account | there is no AmitAI server |
+| Analytics, crash reports, ads | never added, not even opt-out |
+| Reading your clipboard in the background | only on an explicit tool call |
+| Answering when the phone is off | a job needs power and network at fire time |
+| LAN access to the MCP endpoint | loopback only, by design |
+| Exposing clipboard/alarms over MCP | they need app-side intent and a person present |
+| iOS build | the bridges are Android-native (Vosk, overlay, alarms) |
+
+### 20.16 A day with AmitAI (all of it in one go)
+
+```
+07:30  ⏰  scheduled job fires while the phone is locked
+           notification: "Weather: 24°C, light rain in Nagpur"
+
+08:10  you share a screenshot of a build error from Chrome → AmitAI
+           "This is a Gradle version mismatch — bump to 8.7."
+
+08:12  you: "remember my bike service is in December"        → Memory
+       you: "remind me every Monday at 9pm to plan the week" → Schedules
+
+13:00  you: "what did we decide about the bridge?"           → search_chats
+           "You decided the app hosts the MCP server, not the bridge."
+
+20:00  you copy a long article, open AmitAI:
+       "summarise what I copied"                             → read_clipboard
+       tap speak                                             → read aloud
+
+21:00  you say "Ok Amit" → bubble → ask by voice → barge in → "stop"
+
+23:00  in Termux: opencode → "what's on my plate this week?"
+           ⚙ amitai_recall → reads the notes you saved at 08:12
+```
+
+That is the whole app: **chat, vision, web, memory, history, schedules, voice,
+wake word, bubble, sharing, clipboard, providers, usage, storage, themes and the
+opencode MCP bridge** — all on the phone, with no server and no account.
+
+---
 
 <div align="center">
 

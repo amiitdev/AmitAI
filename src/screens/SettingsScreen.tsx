@@ -14,7 +14,7 @@ import { Settings, PRESETS, DEFAULT_SETTINGS, ELEVEN_VOICES, PROVIDERS, OPENROUT
 import { getWeeklyUsage, resetUsage } from '../lib/usage';
 import { useTheme, THEMES, ThemeKey, ThemeColors, radius, space, mono } from '../theme';
 import { ping } from '../api/openai';
-import { hasSTT, hasTTS, hasPicker, openTtsSettings, ttsStatus } from '../lib/native';
+import { hasSTT, hasTTS, hasPicker, openTtsSettings, ttsStatus, mcpInfo, setMcpService, copyText, McpInfo } from '../lib/native';
 import { useKeyboardHeight } from '../lib/useKeyboard';
 import { speakAloud, stopAllSpeech } from '../lib/speech';
 import { resetQuota } from '../lib/quota';
@@ -54,7 +54,12 @@ export function SettingsScreen({ settings, onChange, onBack, onClearChats }: Pro
   const [ttsInfo, setTtsInfo] = useState<Awaited<ReturnType<typeof ttsStatus>>>(null);
   const [models, setModels] = useState<string[] | null>(null);
   const [usage, setUsage] = useState<Awaited<ReturnType<typeof getWeeklyUsage>> | null>(null);
+  const [mcp, setMcp] = useState<McpInfo | null>(null);
   const keyboard = useKeyboardHeight();
+
+  useEffect(() => {
+    mcpInfo().then(setMcp).catch(() => {});
+  }, []);
 
   useEffect(() => {
     getWeeklyUsage(settings.model).then(u => setUsage(u)).catch(() => {});
@@ -389,6 +394,74 @@ export function SettingsScreen({ settings, onChange, onBack, onClearChats }: Pro
         closed.
       </Text>
 
+      <Text style={styles.section}>opencode MCP</Text>
+      <Text style={styles.hint}>
+        Loopback endpoint where the opencode agent can call AmitAI's own tools
+        (memory, chat search, weather, time).
+      </Text>
+      {mcp ? (
+        <>
+          <View style={styles.usageCard}>
+            <Text selectable style={styles.mcpLine}>{mcp.url}</Text>
+            <Text selectable style={styles.mcpLine}>Bearer {mcp.token}</Text>
+            <Text style={styles.hint}>
+              {mcp.service
+                ? 'listening · background service on'
+                : mcp.running
+                ? 'listening · only while AmitAI is open'
+                : 'not listening'}
+            </Text>
+          </View>
+          <View style={styles.row}>
+            <Text style={styles.label}>Keep running in background</Text>
+            <TouchableOpacity
+              onPress={async () => {
+                const next = !mcp.service;
+                setMcp({ ...mcp, service: next });
+                await setMcpService(next);
+                setTimeout(() => {
+                  mcpInfo().then(setMcp).catch(() => {});
+                }, 900);
+              }}
+              style={[styles.toggle, mcp.service && styles.toggleOn]}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.knob, mcp.service && styles.knobOn]} />
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.hint}>
+            Without this, Android freezes the app when it is not on screen: the port stays open
+            but nothing answers, and the agent times out. On = a small “AmitAI tools ready”
+            notification stays in the shade.
+          </Text>
+          <TouchableOpacity
+            style={styles.resetUsageBtn}
+            onPress={() => {
+              const snippet = JSON.stringify(
+                {
+                  mcp: {
+                    amitai: {
+                      type: 'remote',
+                      url: mcp.url,
+                      enabled: true,
+                      headers: { Authorization: `Bearer ${mcp.token}` },
+                    },
+                  },
+                },
+                null,
+                2,
+              );
+              copyText(snippet);
+              Alert.alert('Copied', 'Paste under "mcp" in ~/.config/opencode/opencode.json, then restart opencode.');
+            }}
+          >
+            <Text style={styles.resetText}>Copy opencode.json snippet</Text>
+          </TouchableOpacity>
+        </>
+      ) : (
+        <Text style={styles.hint}>MCP server is not available in this build.</Text>
+      )}
+
       <Text style={styles.section}>Storage</Text>
       <View style={styles.row}>
         <Text style={styles.label}>Store chats on SD card</Text>
@@ -715,6 +788,7 @@ export function SettingsScreen({ settings, onChange, onBack, onClearChats }: Pro
 const createStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     usageCard: { marginTop: space(3), backgroundColor: colors.bgRaised, borderRadius: radius.md, padding: space(3), gap: space(3) },
+    mcpLine: { color: colors.text, fontFamily: mono, fontSize: 11 },
     usageRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
     usageLabel: { color: colors.textDim, fontSize: 13 },
     usageVal: { color: colors.text, fontFamily: mono, fontSize: 13, fontWeight: '600' },

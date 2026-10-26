@@ -501,7 +501,7 @@ function AppInner() {
     const history = [...active.messages.filter(m => !m.error), msg];
     const recall = await buildRecallPreamble(text, active.id).catch(() => '');
     runCompletion(history, recall);
-  }, [draft, streaming, active, settings, imageUris, runCompletion, toast]);
+  }, [draft, streaming, active, settings, imageUris, runCompletion, toast, localExchange]);
 
   const stop = useCallback(() => {
     streamRef.current?.stop();

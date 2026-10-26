@@ -4,6 +4,7 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
@@ -74,6 +75,17 @@
       <service
         android:name=".ScheduleTaskService"
         android:exported="false" />
+
+      <!-- Local MCP tool server: keeps 127.0.0.1:8140 answering while AmitAI
+           is backgrounded, so the opencode agent can call the app's tools. -->
+      <service
+        android:name=".McpService"
+        android:exported="false"
+        android:foregroundServiceType="specialUse">
+        <property
+          android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+          android:value="Local loopback server exposing AmitAI tools to the on-device opencode agent" />
+      </service>
 
       <service
         android:name=".WakeWordService"

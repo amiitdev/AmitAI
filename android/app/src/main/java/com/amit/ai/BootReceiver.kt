@@ -30,6 +30,13 @@ class BootReceiver : BroadcastReceiver() {
             }
         }
 
+        if (AssistantPrefs.mcpServiceEnabled(context)) {
+            try {
+                McpService.startService(context)
+            } catch (_: Throwable) {
+            }
+        }
+
         // Every AlarmManager alarm is wiped by a reboot (and by an app update).
         // Rebuild them from the stored list; repeating jobs move to their next
         // slot instead of firing yesterday's time at boot.

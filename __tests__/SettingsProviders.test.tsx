@@ -26,6 +26,10 @@ jest.mock('../src/lib/native', () => ({
   requestAllFiles: jest.fn(async () => false),
   // The Voice section reports the phone TTS engine it managed to open.
   ttsStatus: jest.fn(async () => null),
+  // The opencode MCP card asks the bridge where the loopback endpoint is.
+  mcpInfo: jest.fn(async () => ({ url: 'http://127.0.0.1:8140/mcp', token: 'test', running: true, service: true })),
+  setMcpService: jest.fn(async () => true),
+  copyText: jest.fn(async () => true),
 }));
 jest.mock('../src/lib/speech', () => ({
   speakWithConfig: jest.fn(),

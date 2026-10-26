@@ -43,7 +43,8 @@ const norm = (s: string) => s.replace(/\s+/g, ' ').trim();
 const fold = (s: string) => norm(s).toLowerCase().replace(/[^a-z0-9]+/g, '');
 
 export async function loadNotes(): Promise<Note[]> {
-  if (cache) return cache;
+  // Always read through: the MCP server (opencode) can write notes from
+  // another thread/process, and a stale in-memory cache would hide them.
   try {
     const raw = await readKey(MEMORY_KEY);
     if (raw) {

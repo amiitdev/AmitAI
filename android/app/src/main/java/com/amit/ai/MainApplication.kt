@@ -24,5 +24,13 @@ class MainApplication : Application(), ReactApplication {
   override fun onCreate() {
     super.onCreate()
     loadReactNative(this)
+    // Expose AmitAI's own tools to the local opencode agent (MCP, loopback only).
+    // With "keep running" on, the foreground service owns the server instead, so
+    // the agent can still reach it while AmitAI is not the app on screen.
+    if (AssistantPrefs.mcpServiceEnabled(this)) {
+      McpService.startService(this)
+    } else {
+      AmitMcpServer.start(this)
+    }
   }
 }

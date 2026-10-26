@@ -312,6 +312,40 @@ export function onShare(handler: (p: SharedPayload) => void): () => void {
   return () => sub.remove();
 }
 
+/* ---------------------------- MCP (opencode) ----------------------------- */
+
+export type McpInfo = { url: string; token: string; running: boolean; service: boolean };
+
+/** Loopback MCP endpoint exposing AmitAI's tools to the opencode agent. */
+export async function mcpInfo(): Promise<McpInfo | null> {
+  if (!AmitAssistant?.mcpInfo) return null;
+  try {
+    const s = await AmitAssistant.mcpInfo();
+    return {
+      url: String(s?.url ?? ''),
+      token: String(s?.token ?? ''),
+      running: !!s?.running,
+      service: !!s?.service,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Keeps the endpoint reachable while AmitAI is backgrounded (foreground
+ * service). Off = the server only answers while the app is on screen.
+ */
+export async function setMcpService(enabled: boolean): Promise<boolean> {
+  if (!AmitAssistant?.mcpService) return false;
+  try {
+    await AmitAssistant.mcpService(enabled);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /* ------------------------------- scheduler ------------------------------- */
 
 export interface SchedulerStatus {

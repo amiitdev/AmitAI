@@ -13,6 +13,7 @@ each). Download from the [Releases page](https://github.com/amiitdev/AmitAI/rele
 | `AmitAI-3.6.apk` | 3.6 | 9 | 101 MB | `ca0beb275f4d71c09603251d33271046` |
 | `AmitAI-3.7.apk` | 3.7 | 10 | 101 MB | `e8e5916b22f06fae718829716fef3ef9` |
 | `AmitAI-3.8.apk` | 3.8 | 11 | 101 MB | `e7215eafd5bd7a2531d4fef3a5717f26` |
+| `AmitAI-3.9.apk` | 3.9 | 12 | 101 MB | `b54e62bad7183b2fd76bf4fb467292b6` |
 
 All builds: `com.amit.ai`, min SDK 24, target SDK 36, ABIs `arm64-v8a`,
 `armeabi-v7a`, `x86`, `x86_64`.
@@ -22,7 +23,7 @@ All builds: `com.amit.ai`, min SDK 24, target SDK 36, ABIs `arm64-v8a`,
 `AmitAI-3.2.apk` reports `versionName 3.3` in its manifest — the version bump
 landed before that build was produced. It predates the wake word and shares
 `versionCode 6` with the 3.3 build, so it cannot be installed *over* 3.3.
-Use **3.8** unless you are reproducing history.
+Use **3.9** unless you are reproducing history.
 
 ## Signing
 
@@ -39,9 +40,13 @@ to distribute updates.
 ## Verify a download
 
 ```bash
+md5sum AmitAI-3.9.apk
+# b54e62bad7183b2fd76bf4fb467292b6  AmitAI-3.9.apk
+
+sha256sum AmitAI-3.9.apk
+# ab9f8874556f0777d55cfee873e9607295d1d79e6c060c76161c97d3ef51aa44  AmitAI-3.9.apk
+
+# older builds
 md5sum AmitAI-3.8.apk
 # e7215eafd5bd7a2531d4fef3a5717f26  AmitAI-3.8.apk
-
-sha256sum AmitAI-3.8.apk
-# 200cadc63a55cb12ed3112bec40f55ac6f2f42a9b45f84d5ee208063ab8a0dbf  AmitAI-3.8.apk
 ```

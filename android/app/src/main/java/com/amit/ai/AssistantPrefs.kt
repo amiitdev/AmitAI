@@ -20,6 +20,10 @@ object AssistantPrefs {
     fun bubbleEnabled(c: Context) = prefs(c).getBoolean("bubble", false)
     fun setBubbleEnabled(c: Context, v: Boolean) = prefs(c).edit().putBoolean("bubble", v).apply()
 
+    /** Tool server survives backgrounding (foreground service) when this is on. */
+    fun mcpServiceEnabled(c: Context) = prefs(c).getBoolean("mcp_service", true)
+    fun setMcpServiceEnabled(c: Context, v: Boolean) = prefs(c).edit().putBoolean("mcp_service", v).apply()
+
     fun policy(c: Context) = prefs(c).getString("policy", POLICY_CHARGING) ?: POLICY_CHARGING
     fun setPolicy(c: Context, v: String) = prefs(c).edit().putString("policy", v).apply()
 

@@ -349,6 +349,43 @@ class AmitAssistantModule(private val ctx: ReactApplicationContext) :
     }
 
     @ReactMethod
+    fun mcpInfo(promise: Promise) {
+        try {
+            val s = AmitMcpServer.status(ctx)
+            val m = Arguments.createMap()
+            m.putString("url", s.optString("url"))
+            m.putString("token", s.optString("token"))
+            m.putBoolean("running", s.optBoolean("running"))
+            m.putBoolean("service", s.optBoolean("service"))
+            promise.resolve(m)
+        } catch (e: Throwable) {
+            promise.reject("mcp_info", e)
+        }
+    }
+
+    /**
+     * Starts/stops the foreground service that keeps the MCP endpoint alive in
+     * the background. Without it the app is frozen when backgrounded and every
+     * agent call times out on a socket nobody is reading.
+     */
+    @ReactMethod
+    fun mcpService(enabled: Boolean, promise: Promise) {
+        try {
+            if (enabled) {
+                McpService.startService(ctx)
+            } else {
+                McpService.stopService(ctx)
+                AssistantPrefs.setMcpServiceEnabled(ctx, false)
+                // Keep the endpoint usable while AmitAI is on screen.
+                AmitMcpServer.start(ctx)
+            }
+            promise.resolve(true)
+        } catch (e: Throwable) {
+            promise.reject("mcp_service", e)
+        }
+    }
+
+    @ReactMethod
     fun openAppSettings(promise: Promise) {        try {
             val i = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${ctx.packageName}"))
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
