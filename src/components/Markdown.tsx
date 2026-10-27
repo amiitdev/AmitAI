@@ -155,16 +155,27 @@ export function parseMarkdown(src: string): Block[] {
       lines[i].trim() &&
       !/^\s*(```|#{1,4}\s|[-*+]\s|\d+[.)]\s|>|---|\|)/.test(lines[i])
     ) {
-      buf.push(lines[i]);
+      buf.push(lines[i].trim());
       i++;
     }
-    blocks.push({ kind: 'para', text: buf.join('\n') });
+    // Single newlines are soft breaks in markdown; collapsing them also lets
+    // **bold** spans survive a model that wraps mid-phrase.
+    blocks.push({ kind: 'para', text: buf.join(' ') });
   }
 
   return blocks;
 }
 
-const INLINE = /(`[^`\n]+`|\*\*[^*\n]+\*\*|\*[^*\n]+\*|\[[^\]\n]+\]\([^)\s]+\))/g;
+/**
+ * Inline tokens, most specific first.
+ *
+ * The old pattern refused any `*` inside a bold span, so `**2*3 = 6**` (and
+ * anything else containing an asterisk, including nested italics) fell through
+ * as literal text with the stars still visible. Bare `__bold__` and `_italic_`
+ * were not recognised at all.
+ */
+const INLINE =
+  /(`[^`\n]+`|\*\*\*(?:[^*\n]|\*(?!\*))+\*\*\*|\*\*(?:[^*\n]|\*(?!\*))+\*\*|__[^_\n]+__|\*(?!\*)[^*\n]+\*|_(?!_)[^_\n]+_|\[[^\]\n]+\]\([^)\s]+\))/g;
 
 function Inline({ text, base }: { text: string; base?: any }) {
   const parts = text.split(INLINE).filter(p => p !== '');
@@ -178,14 +189,21 @@ function Inline({ text, base }: { text: string; base?: any }) {
             </Text>
           );
         }
-        if (p.startsWith('**') && p.endsWith('**')) {
+        if (p.startsWith('***') && p.endsWith('***') && p.length > 6) {
+          return (
+            <Text key={idx} style={[styles.bold, styles.italic]}>
+              {p.slice(3, -3)}
+            </Text>
+          );
+        }
+        if ((p.startsWith('**') && p.endsWith('**')) || (p.startsWith('__') && p.endsWith('__'))) {
           return (
             <Text key={idx} style={styles.bold}>
               {p.slice(2, -2)}
             </Text>
           );
         }
-        if (p.startsWith('*') && p.endsWith('*') && p.length > 2) {
+        if (p.length > 2 && ((p.startsWith('*') && p.endsWith('*')) || (p.startsWith('_') && p.endsWith('_')))) {
           return (
             <Text key={idx} style={styles.italic}>
               {p.slice(1, -1)}
