@@ -79,3 +79,9 @@ releases/*.apk
 
 # Local editor backups
 *.bak.*
+
+# Offline TTS: sherpa-onnx libs (~73 MB) and voice models (~78 MB).
+# Run scripts/fetch-tts.sh after cloning; nothing here belongs in git.
+.tts-build/
+android/app/src/main/jniLibs/
+android/app/src/main/assets/tts/

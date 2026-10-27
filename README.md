@@ -9,8 +9,8 @@
 A native Android AI assistant built with **React Native + Kotlin**.
 Streaming chat, thirteen on-device tools, long-term memory, multi-image vision,
 scheduled jobs that answer while the app is closed (cron in plain words),
-hands-free voice, an offline “Ok Amit” wake word, a floating bubble — and now an
-**MCP server** so the opencode agent on the same phone can call AmitAI's own
+hands-free voice with **free on-device neural voices** (Piper + Kitten — no key,
+no quota), an offline “Ok Amit” wake word, a floating bubble, and an **MCP server** so the opencode agent on the same phone can call AmitAI's own
 memory, chat search, weather and clock — with **no telemetry, no account, no middleman**.
 
 [![Download](https://img.shields.io/badge/⬇_Download-APK-6366f1?style=for-the-badge)](https://github.com/amiitdev/AmitAI/releases/latest)
@@ -18,8 +18,9 @@ memory, chat search, weather and clock — with **no telemetry, no account, no m
 [![React Native](https://img.shields.io/badge/React_Native-0.88-61dafb?style=for-the-badge&logo=react&logoColor=061a23)](https://reactnative.dev)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.2-7f52ff?style=for-the-badge&logo=kotlin&logoColor=white)](https://kotlinlang.org)
 
-![Version](https://img.shields.io/badge/version-3.9-6366f1?style=flat-square)
-![Tests](https://img.shields.io/badge/tests-82_passed-10b981?style=flat-square)
+![Version](https://img.shields.io/badge/version-4.0-6366f1?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-87_passed-10b981?style=flat-square)
+![Voices](https://img.shields.io/badge/offline_voices-2-10b981?style=flat-square)
 ![TypeScript](https://img.shields.io/badge/tsc-0_errors-3178c6?style=flat-square&logo=typescript&logoColor=white)
 ![Tools](https://img.shields.io/badge/on--device_tools-13-a855f7?style=flat-square)
 ![MCP](https://img.shields.io/badge/MCP_tools-5-f59e0b?style=flat-square)
@@ -30,12 +31,13 @@ memory, chat search, weather and clock — with **no telemetry, no account, no m
 
 ## ⬇ Download
 
-The newest build is **3.9** (`versionCode 12`). Every APK ever shipped is on the
+The newest build is **4.0** (`versionCode 13`). Every APK ever shipped is on the
 [**Releases page**](https://github.com/amiitdev/AmitAI/releases).
 
 | Version | What changed | Size | Link |
 |---|---|---|---|
-| **3.9** | **opencode MCP server** — the CLI agent on your phone can call AmitAI's memory, chat search, weather and clock; foreground service keeps it alive in the background | 101 MB | [AmitAI-3.9.apk](https://github.com/amiitdev/AmitAI/releases/download/v3.9/AmitAI-3.9.apk) |
+| **4.0** | **Offline neural voices** — Piper + KittenTTS run inside the app via sherpa-onnx (no key, no quota), audio-synced transcript with karaoke highlight, Jarvis-style voice HUD, STT survives `ERROR_CLIENT`, 87 tests | 223 MB | [AmitAI-4.0.apk](https://github.com/amiitdev/AmitAI/releases/download/v4.0/AmitAI-4.0.apk) |
+| 3.9 | **opencode MCP server** — the CLI agent on your phone can call AmitAI's memory, chat search, weather and clock; foreground service keeps it alive in the background | 101 MB | [AmitAI-3.9.apk](https://github.com/amiitdev/AmitAI/releases/download/v3.9/AmitAI-3.9.apk) |
 | 3.8 | memory + past-chat recall that works even on tool-less providers | 101 MB | [AmitAI-3.8.apk](https://github.com/amiitdev/AmitAI/releases/download/v3.8/AmitAI-3.8.apk) |
 | 3.7 | Share into AmitAI, clipboard + memory tools, 8 images, scheduled jobs | 101 MB | [AmitAI-3.7.apk](https://github.com/amiitdev/AmitAI/releases/download/v3.7/AmitAI-3.7.apk) |
 | 3.6 | Storage modes, chat files, latest tools | 101 MB | [AmitAI-3.6.apk](https://github.com/amiitdev/AmitAI/releases/download/v3.6/AmitAI-3.6.apk) |
@@ -328,10 +330,13 @@ the agent answers **December** — across sessions, which plain opencode cannot 
 | Feature | Detail |
 |---|---|
 | Voice input | Android `SpeechRecognizer` with partial results (words appear while you talk) |
-| Read aloud | Android `TextToSpeech` — free, offline, adjustable speed 0.5×–2.0× |
-| Cloud voice | ElevenLabs `eleven_flash_v2_5`, 6 free-tier voices |
+| Read aloud — Device | Android `TextToSpeech` — instant, offline, 0.5×–2.0× |
+| Read aloud — **Piper** | neural `vits-piper en_US-lessac-low-int8` (21 MB), on-device |
+| Read aloud — **Kitten** | neural `kitten-nano v0.2 fp16`, 8 voices (Bella · Jasper · Luna · Bruno · Rosie · Hugo · Kiki · Leo) |
+| Synced transcript | words highlight and scroll in step with the audio |
+| No key, no quota | synthesis never leaves the phone |
 | Voice mode | hands-free listen → think → speak → listen loop |
-| **Barge-in** | talk over the answer to cut it off; echo guard stops it hearing itself |
+| **Stop anytime** | tap the orb or hang-up; the mic is closed during playback so MIUI cannot cut the answer |
 | Stop words | “stop”, “wait”, “no”, “cancel”, … interrupt instantly |
 | **“Ok Amit” wake word** | offline Vosk model (~40 MB, downloaded once) |
 | **Floating bubble** | draggable “A” overlay; tap → voice mode |
@@ -575,34 +580,67 @@ per delta drops frames on a 200-message thread.
 
 ## 7. The voice stack
 
-### Two speech engines
+### Three engines, all free
 
-| | Device (default) | ElevenLabs |
+| | Device | Piper | Kitten |
+|---|---|---|---|
+| Engine | Android `TextToSpeech` | sherpa-onnx VITS | sherpa-onnx KittenTTS |
+| Model | system | `vits-piper-en_US-lessac-low-int8`, 21 MB | `kitten-nano-en-v0_2-fp16`, 30 MB |
+| Voices | system | 1 (Lessac) | 8 (Bella, Jasper, Luna, Bruno, Rosie, Hugo, Kiki, Leo) |
+| Latency | instant | ~1–2 s for a paragraph | ~1–2 s |
+| Quality | robotic | clear | warmer, more natural |
+| Cost / network | free / none | free / none | free / none |
+
+There is no cloud or paid voice any more. **Device** is the zero-setup system
+voice; choosing **Piper** or **Kitten** in Settings routes synthesis through
+sherpa-onnx on the phone.
+
+### How a reply becomes audio
+
+```
+text ──▶ LocalTts.speak(engine, voice, speed)
+          ├─ first run: assets/tts/<engine> ─▶ filesDir/tts/<engine>
+          │             (marker `localtts.v2.<engine>` ⇒ unpack happens once)
+          ├─ OfflineTts.generate(text, sid, speed) ─▶ float samples
+          └─ 16-bit mono WAV ─▶ cacheDir/amit-tts.wav
+                                   │
+                   MediaPlayer ◀───┘   (Kotlin; the JS bridge is not in the path)
+                                   │
+                  progress ticker every 150 ms
+                                   ▼
+             AmitVoiceProgress { id, position, duration } ──▶ JS
+                                   ▼
+             TranscriptCard: word highlight + proportional auto-scroll
+```
+
+The player lives in Kotlin because a 40-second paragraph must survive JS being
+busy, backgrounded, or reloaded.
+
+### The transcript follows the voice
+
+The word index is `floor(position / duration × wordCount)`, applied across
+per-line blocks, so numbered answers keep their own paragraphs and the highlight
+advances exactly as the audio reaches each word. When a ROM reports no duration
+(the Device voice can do this), a timer estimate takes over.
+
+### Barge-in is off by design (4.0)
+
+Through 3.9 the mic stayed open while the answer played. On MIUI the loudspeaker
+bled into the recognizer, which interrupted the very sentence it was hearing —
+playback died ~450 ms in and the loop retriggered. 4.0 closes the mic during
+playback (`BARGE_IN = false`); tap the orb or hang-up to stop. The echo-overlap
+guard and stop words in `barge.ts` remain for engines that support live barge-in.
+
+### Pinned versions, and the errors they prevent
+
+| Component | Pinned | Why |
 |---|---|---|
-| Cost | free | free tier quota |
-| Latency | instant, offline | ~1–2 s per reply |
-| Quality | robotic | natural |
-| Setup | none | paste an API key |
+| sherpa-onnx | **v1.12.40** | `Tts.kt` is copied from this exact tag; mixing tags throws `NoSuchFieldError: no "Ljava/lang/String;" field "lexicon"` |
+| Piper voice | `en_US-lessac-low-int8` | smallest model that still sounds clean through a phone speaker |
+| Kitten | **v0.2 fp16** | v0.8 ships a 400-wide style tensor, rejected as `style_dim[0] should be 1, given: 400` |
 
-ElevenLabs runs through Kotlin (`MediaPlayer` + `xi-api-key` header) because the
-HTTP call and MP3 playback don't belong in JS. Only voices that actually work on
-the free tier are listed — library voices like Rachel return
-`402 paid_plan_required`.
-
-### Barge-in without self-interruption
-
-While the assistant speaks, the mic is open for interruptions. The loudspeaker
-bleeds into the microphone, so the recognizer often transcribes the assistant's
-own sentence. That must not count as an interruption:
-
-```
- heard:  "the arp table maps ip to mac"
- spoken: "the arp table maps ip to mac addresses"
-         └──────── overlap ≈ 0.86 → it is the phone hearing itself → ignore
-```
-
-Word-set overlap above **0.4** is treated as echo; below it, the user is genuinely
-talking. Single-word commands (`stop`, `wait`, `no`, `cancel`, …) always interrupt.
+Neither the `.so` files nor the models are committed — `./scripts/fetch-tts.sh`
+downloads them (73 MB of libs for `arm64-v8a` + `x86_64`, 78 MB of models).
 
 ### Wake word engineering notes
 
@@ -952,10 +990,11 @@ AmitAI/
 ├── index.js                        registers <App/>
 ├── assets/                         icon + splash art
 ├── releases/                       APK index + checksums (binaries live on Releases)
-├── __tests__/                      11 suites, 82 tests
+├── __tests__/                      12 suites, 87 tests
+├── scripts/fetch-tts.sh            sherpa libs + Piper/Kitten models (~150 MB)
 └── src/
     ├── types.ts                    Message, Conversation, Settings, providers,
-    │                               PRESETS, PRICES, ElevenLabs voices
+    │                               PRESETS, PRICES, KITTEN_VOICES
     ├── theme.ts                    3 themes + tokens (space, radius, font)
     ├── api/
     │   ├── openai.ts               runAgent: SSE + tool loop, ping, image → data URL
@@ -972,7 +1011,8 @@ AmitAI/
     │   ├── schedules.ts            parseWhen, cron parser, nextRun, native sync
     │   ├── scheduleTask.ts         headless runner: agent loop → notification
     │   ├── reader.ts               queue between tools and the hidden WebView
-    │   ├── speech.ts               one-speaker-at-a-time TTS state
+    │   ├── speech.ts               routes device/Piper/Kitten + progress stream
+    │   ├── format.ts               plainMarkdown (lines kept) + spokenWordIndex
     │   ├── barge.ts                echo guard + stop words
     │   ├── quota.ts                per-model daily counters, 429 learning
     │   ├── usage.ts                weekly requests/tokens/cost
@@ -981,6 +1021,8 @@ AmitAI/
     │   ├── Bubble.tsx              user bubble (with images) vs markdown + actions
     │   ├── Composer.tsx            input, 8-image strip, mic, web toggle, send/stop
     │   ├── Markdown.tsx            dependency-free renderer (tables included)
+    │   ├── VoiceHud.tsx            orb: tick ring, radar sweep, waveform bars
+    │   ├── TranscriptCard.tsx      karaoke transcript, follows the audio
     │   ├── CodeBlock.tsx           syntax colour + per-block copy
     │   ├── ConversationList.tsx    search, new, pin, rename, delete + foot nav
     │   ├── Sheet.tsx               bottom sheet + rename dialog
@@ -997,7 +1039,9 @@ AmitAI/
 
 android/app/src/main/java/com/amit/ai/
 ├── MainActivity.kt / MainApplication.kt
-├── AmitVoiceModule.kt              STT · TTS · ElevenLabs · clipboard · storage
+├── AmitVoiceModule.kt              STT · TTS routing · progress events · clipboard
+├── LocalTts.kt                     sherpa-onnx engines, asset unpack, WAV writer
+├── com/k2fsa/sherpa/onnx/Tts.kt    sherpa Kotlin API (pinned to v1.12.40)
 ├── AmitVoicePackage.kt             registers all three modules
 ├── AmitAssistantModule.kt          wake · bubble · policy · model download · share
 ├── AmitSchedulerModule.kt          AlarmManager · channels · notifications
@@ -1027,12 +1071,14 @@ android/app/src/main/java/com/amit/ai/
 | Android SDK | platform 37, build-tools 37 |
 | Android NDK | 27.1.12297006 |
 | Device / emulator | Android 7.0+ |
+| Node on Gradle's PATH | ≥ 20 — Metro runs inside the Gradle daemon |
 
 ### Debug
 
 ```bash
 git clone https://github.com/amiitdev/AmitAI.git
 cd AmitAI
+./scripts/fetch-tts.sh                    # sherpa libs + both voices, ~150 MB, once
 npm install
 
 npx react-native start                    # Metro, terminal 1
@@ -1050,6 +1096,33 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 The release variant embeds the JS bundle, so the app cold-starts alone. To ship
 updates properly, generate your own keystore and point `signingConfigs.release`
 at it — this repo uses the debug key so that side-loading is frictionless.
+
+### Offline voice assets
+
+`scripts/fetch-tts.sh` is idempotent and needs `curl`, `tar`, `bzip2`, `rsync`:
+
+```bash
+./scripts/fetch-tts.sh
+# have  jniLibs (arm64-v8a, x86_64)
+# have  voice .../assets/tts/piper
+# have  voice .../assets/tts/kitten
+# offline voice stack ready
+```
+
+It installs sherpa-onnx `v1.12.40` natives into
+`android/app/src/main/jniLibs/{arm64-v8a,x86_64}/` and the two voices into
+`android/app/src/main/assets/tts/{piper,kitten}/`. Both paths are gitignored;
+`android/app/build.gradle` limits packaging to those two ABIs.
+
+### Troubleshooting the voice build
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `NoSuchFieldError: ... "lexicon"` at first speak | `Tts.kt` and `libsherpa-onnx-jni.so` from different tags | re-run `fetch-tts.sh`; keep both at `v1.12.40` |
+| `style_dim[0] should be 1, given: 400` | Kitten v0.8 model | use `kitten-nano-en-v0_2-fp16` |
+| `configs.toReversed is not a function` during build | Metro under Node 18 from the Gradle daemon | `export PATH=~/.nvm/versions/node/v24.19.0/bin:$PATH && ./gradlew --stop` |
+| Voice silent, logcat clean | first-run unpack still running | wait for `localtts.v2.*` marker; retry |
+| Build fails on missing `.so` | clone without fetching binaries | run `scripts/fetch-tts.sh` |
 
 ### Local model (Ollama)
 
@@ -1170,9 +1243,9 @@ $ ls -lh AmitAI-3.9.apk
 | opencode MCP | Copy opencode.json snippet | — | copies the `amitai` MCP block ready to paste |
 | Web access | Page reader | Fast | Fast = fetch + strip · Browser = hidden WebView |
 | Web access | Pages per answer | 3 | hard budget (1–6) |
-| Voice | Speaking voice | Device | Device TTS or ElevenLabs |
+| Voice | Speaking voice | Device | Device TTS · Piper · Kitten |
 | Voice | Speaking speed | 1.0× | 0.5×–2.0× |
-| Voice | ElevenLabs key / voice | empty / Adam | 6 free-tier voices |
+| Voice | Kitten voice | Bella | 8 on-device voices |
 | Voice | Test this voice | — | speaks one sample sentence |
 | Ok Amit | Wake word | off | offline Vosk listener |
 | Ok Amit | Floating bubble | off | overlay permission needed |
@@ -1305,7 +1378,9 @@ the foreground, and only when you ask a question that needs it).
 
 The APK grew from 65 MB to 101 MB in 3.3 because Vosk ships native recognition
 libraries for **all four ABIs** (`arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64`).
-An arm64-only build would be roughly 25–30 MB smaller.
+4.0 adds ~151 MB of on-device speech: sherpa-onnx natives for two ABIs (73 MB)
+and the Piper + Kitten models (78 MB). An arm64-only build would shed roughly
+35–40 MB; moving the voices to a first-run download would shed most of the rest.
 
 ---
 
@@ -1314,7 +1389,7 @@ An arm64-only build would be roughly 25–30 MB smaller.
 | Limit | Why | Path forward |
 |---|---|---|
 | Wake word needs a 40 MB download | Vosk model is not bundled | ship a quantized/keyword-only model |
-| APK is 101 MB | 4 ABIs of `libvosk.so` | ABI splits + App Bundle |
+| APK is 223 MB | Vosk (4 ABIs) + sherpa-onnx (2 ABIs) + 78 MB of voice models | per-ABI splits, or download the neural voices on first run |
 | No syntax highlighting | avoided a heavy highlighter | add a tokenizer or Prism port |
 | STT needs Google speech service | `SpeechRecognizer` backend | bundle Whisper via ONNX |
 | No image generation | not in chat completions | call `/images/generations` |
@@ -1368,7 +1443,10 @@ and a business entity, not code.
 | Ionicons | Ionic | MIT |
 | DuckDuckGo HTML endpoint | DuckDuckGo | unofficial, rate-limited |
 | Open-Meteo | Open-Meteo | CC-BY-4.0 |
-| ElevenLabs API | ElevenLabs | free tier, per-key quota |
+| sherpa-onnx | k2-fsa | Apache-2.0 |
+| KittenTTS nano (v0.2) | KittenML | Apache-2.0 |
+| Piper voice `en_US-lessac-low` | Rhasspy / Piper | MIT |
+| espeak-ng data (phoneme tables) | eSpeak NG | GPL-3.0 |
 
 Built and tested on a real **iQOO I2305** (Android 16, API 36, arm64-v8a),
 with the laptop (Linux Mint, kernel 6.8) as the Ollama and bridge host.
@@ -1491,9 +1569,11 @@ the notification opens AmitAI.
 | You can… | Do this | What happens |
 |---|---|---|
 | Dictate | Tap 🎤 | words appear while you speak (partial results) |
-| Read answers aloud | Tap **speak** under a reply | Android TTS, offline |
+| Read answers aloud | Tap **speak** under a reply | the voice chosen in Settings, offline |
 | Change the speed | Settings → Speaking speed | 0.5× – 2.0× |
-| Use a cloud voice | Settings → ElevenLabs + key | 6 free-tier voices (`eleven_flash_v2_5`) |
+| Use a neural voice | Settings → **Voice** → Piper or Kitten | on-device, free, no key |
+| Pick a Kitten voice | Settings → Kitten → any of 8 | Bella · Jasper · Luna · Bruno · Rosie · Hugo · Kiki · Leo |
+| Follow the words | open voice mode | transcript highlights and scrolls with the audio |
 | Test a voice | Settings → **Test this voice** | speaks one sample sentence |
 | Talk hands-free | Settings/voice mode | listen → think → speak → listen loop |
 | Interrupt it | just talk over it | **barge-in** cuts the speech immediately |
