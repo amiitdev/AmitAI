@@ -642,6 +642,31 @@ guard and stop words in `barge.ts` remain for engines that support live barge-in
 Neither the `.so` files nor the models are committed — `./scripts/fetch-tts.sh`
 downloads them (73 MB of libs for `arm64-v8a` + `x86_64`, 78 MB of models).
 
+### What replaced ElevenLabs, step by step
+
+Fourteen changes, 21 files, +1635 / −373 lines. Nothing about the cloud path
+survived.
+
+| # | Step | What changed |
+|---|---|---|
+| 1 | Dropped the cloud engine | `AmitVoiceModule` lost the ElevenLabs branch (`eleven_flash_v2_5`, `xi-api-key`, MP3 fetch, cloud speaker). No key field, no voice list, no metering. |
+| 2 | Picked a runtime | sherpa-onnx, because it ships VITS (Piper) **and** KittenTTS behind one C++ core, offline, Apache-2.0. |
+| 3 | Vendored the natives | sherpa-onnx `v1.12.40` `.so` for `arm64-v8a` + `x86_64` into `jniLibs/` (73 MB). The Kotlin API `Tts.kt` is copied from the same tag — the JNI surface is version-specific. |
+| 4 | Bundled the voices | `vits-piper-en_US-lessac-low-int8` (21 MB) and `kitten-nano-en-v0_2-fp16` (30 MB, 8 speakers) in `assets/tts/`. |
+| 5 | Wrote the engine wrapper | `LocalTts.kt`: unpack assets to `filesDir` once (marker `localtts.v2.*`), build the right config per engine, synthesise to 16-bit mono WAV in `cacheDir`. |
+| 6 | Rewired the bridge | `speakLocal(text, engine, voice, speed, utteranceId)` + `stopLocal()` + `playFile()` on `MediaPlayer`; `stopCloud()` and the HTTP path deleted. |
+| 7 | Replaced the JS contract | `types.ts` `ttsProvider: 'device' / 'piper' / 'kitten'`; `native.ts` `speakLocal`/`stopLocal`; `speech.ts` routes per engine, waits up to 30 s for the first audio frame, and turns sherpa failures into “The offline voice could not run on this phone”. |
+| 8 | Rebuilt the settings UI | Three voice chips, the eight Kitten speakers, “Test this voice”. The ElevenLabs key/voice/plan rows are gone. |
+| 9 | Added playback progress | A 150 ms Kotlin ticker emits `AmitVoiceProgress { id, position, duration }`; the old cloud path had no position at all. |
+| 10 | Rebuilt voice mode around it | Audio-synced transcript card with karaoke highlight, Jarvis HUD (radar while thinking, bars while speaking), hint only while listening. |
+| 11 | Made the mic survive | STT retries `ERROR_CLIENT`/`ERROR_AUDIO` up to eight times with backoff — the old “Speech error 5” toast is gone. |
+| 12 | Closed the mic during playback | `BARGE_IN = false`: on MIUI the speaker bled into the recogniser and killed playback ~450 ms in. |
+| 13 | Fixed the text | `plainMarkdown` keeps numbered items and table rows on their own lines (a five-item answer used to collapse into one block); `Markdown.tsx` handles `***bold italic***` and `**a*b**`. |
+| 14 | Kept the repo shippable | Binaries and models are gitignored and fetched by `scripts/fetch-tts.sh`; versions pinned; tests 82 → 87; this README rewritten. |
+
+Pushing two `.so` sets and 78 MB of models into the APK costs ~151 MB of install
+size. That is the price of “works on a plane, with no key, on a metered plan”.
+
 ### Wake word engineering notes
 
 | Problem | Solution |

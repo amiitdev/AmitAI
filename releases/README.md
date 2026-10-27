@@ -1,6 +1,6 @@
 # Releases
 
-The APKs are attached to GitHub Releases, not committed to git (they are 65–101 MB
+The APKs are attached to GitHub Releases, not committed to git (they are 65–223 MB
 each). Download from the [Releases page](https://github.com/amiitdev/AmitAI/releases).
 
 | File | Version name | versionCode | Size | MD5 |
@@ -14,9 +14,14 @@ each). Download from the [Releases page](https://github.com/amiitdev/AmitAI/rele
 | `AmitAI-3.7.apk` | 3.7 | 10 | 101 MB | `e8e5916b22f06fae718829716fef3ef9` |
 | `AmitAI-3.8.apk` | 3.8 | 11 | 101 MB | `e7215eafd5bd7a2531d4fef3a5717f26` |
 | `AmitAI-3.9.apk` | 3.9 | 12 | 101 MB | `b54e62bad7183b2fd76bf4fb467292b6` |
+| `AmitAI-4.0.apk` | 4.0 | 13 | 223 MB | `55e19eb307b54fcc106469acd93ebdde` |
 
-All builds: `com.amit.ai`, min SDK 24, target SDK 36, ABIs `arm64-v8a`,
-`armeabi-v7a`, `x86`, `x86_64`.
+All builds: `com.amit.ai`, min SDK 24, target SDK 36. Through 3.9 the APKs carried
+four ABIs (`arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64`); 4.0 ships `arm64-v8a` and
+`x86_64` only, because sherpa-onnx adds 73 MB of natives. 4.0 also bundles the two
+neural voices (78 MB), hence 223 MB.
+
+SHA-256 for 4.0: `4e989f67536a619ad2feca5f7941327b64050ad6966e550e431356b82b3afe79`
 
 ## Note on 3.2
 
