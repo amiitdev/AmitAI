@@ -1,12 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react';
-import {
-  Animated,
-  Easing,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Ionicons from '@react-native-vector-icons/ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, font, radius, space, ThemeColors } from '../theme';
@@ -17,13 +10,26 @@ import {
   stopListening,
   VoiceError,
 } from '../lib/native';
-import { speakAloud, stopAllSpeech } from '../lib/speech';
+import { speakAloud, stopAllSpeech, watchSpeechProgress } from '../lib/speech';
+import { VoiceHud } from '../components/VoiceHud';
+import { TranscriptCard } from '../components/TranscriptCard';
 import { isRealUserSpeech, isSpeakerEcho, isStopWord } from '../lib/barge';
 
 type Phase = 'listening' | 'thinking' | 'speaking' | 'paused' | 'error';
 
 /** ERROR_SPEECH_TIMEOUT / ERROR_NO_MATCH — silence, not a broken mic. */
 const SILENCE_CODES = [6, 7];
+
+/**
+ * The mic stays closed while the answer plays.
+ *
+ * Opening the recogniser mid-playback makes the system switch audio routing to
+ * "communication", which on many phones (Xiaomi/MIUI especially) kills the
+ * MediaPlayer track after a fraction of a second — long answers simply stopped
+ * while short greetings survived. The tap on the orb still interrupts, and the
+ * recognised side effects of echo are gone with it.
+ */
+const BARGE_IN = false;
 
 /**
  * Hands-free conversation loop with instant barge-in / interruption:
@@ -49,6 +55,7 @@ export function VoiceMode({
   const [phase, setPhase] = useState<Phase>('listening');
   const [heard, setHeard] = useState('');
   const [reply, setReply] = useState('');
+  const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   const alive = useRef(true);
@@ -63,6 +70,43 @@ export function VoiceMode({
   const pausedRef = useRef(false);
   /** The last answer we spoke — used to recognise the speaker's own echo. */
   const lastSpokenRef = useRef('');
+  /** Stop functions for the transcript follow-along (native events + timer). */
+  const followStop = useRef<(() => void) | null>(null);
+
+  const stopFollow = useCallback(() => {
+    followStop.current?.();
+    followStop.current = null;
+  }, []);
+
+  /**
+   * Follow the voice word by word.
+   *
+   * The offline engines report the real player position. Device TTS has no such
+   * API, so if no position arrives shortly after playback starts, a timer
+   * advances at a human reading pace instead — the transcript still moves, it
+   * just cannot be frame-accurate.
+   */
+  const followAlong = useCallback(
+    (utterId: string, answer: string) => {
+      stopFollow();
+      let native = false;
+      const unwatch = watchSpeechProgress(utterId, p => {
+        native = true;
+        setProgress(p.fraction);
+      });
+      const startedAt = Date.now();
+      const estimate = Math.max(1400, answer.length * 62);
+      const timer = setInterval(() => {
+        if (native) return;
+        setProgress(Math.min(0.98, (Date.now() - startedAt) / estimate));
+      }, 150);
+      followStop.current = () => {
+        unwatch();
+        clearInterval(timer);
+      };
+    },
+    [stopFollow],
+  );
   /** When that answer stopped playing: the echo guard only applies for a beat
    *  afterwards, because after that the speaker cannot still be heard. */
   const lastSpokenAt = useRef(0);
@@ -82,29 +126,10 @@ export function VoiceMode({
   const bargeErrRef = useRef<((e: VoiceError) => void) | null>(null);
   const restartBarge = useRef<() => void>(() => {});
 
-  const pulse = useRef(new Animated.Value(0)).current;
-
   const setPhaseBoth = (p: Phase) => {
     phaseRef.current = p;
     setPhase(p);
   };
-
-  /* pulsing rings while listening / speaking */
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, {
-          toValue: 1,
-          duration: 1600,
-          easing: Easing.out(Easing.ease),
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulse, { toValue: 0, duration: 0, useNativeDriver: true }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [pulse]);
 
   // `think` and `listen` call each other, so each holds a ref to the other.
   const thinkRef = useRef<(text: string) => void>(() => {});
@@ -237,7 +262,7 @@ export function VoiceMode({
 
   /** Open mic while answer is being spoken for seamless barge-in interruption */
   const startBarge = useCallback((spoken: string) => {
-    if (!hasSTT) return;
+    if (!hasSTT || !BARGE_IN) return;
     /** Audio just started: the loudest, most mis-recognised moment. */
     const openedAt = Date.now();
 
@@ -333,6 +358,7 @@ export function VoiceMode({
         }
 
         setReply(answer);
+        setProgress(0);
         lastSpokenRef.current = answer;
         setPhaseBoth('speaking');
 
@@ -343,10 +369,12 @@ export function VoiceMode({
         // The barge-in mic opens only once playback has actually started:
         // starting the recogniser before the first word let the mic (and the
         // native retry path) cut the answer before it was ever heard.
-        speakAloud(answer, () => {
+        const utterId = speakAloud(answer, () => {
           if (!alive.current) return;
           if (phaseRef.current !== 'speaking') return;
           if (safety.current) clearTimeout(safety.current);
+          stopFollow();
+          setProgress(1);
           stopBarge();
           // The answer is over: from here on the only echo possible is its
           // decaying tail, and the guard is time-boxed against it.
@@ -365,6 +393,7 @@ export function VoiceMode({
           // Playback failed (bad key, no voice data, no engine). Say so plainly
           // and keep the conversation going instead of hanging in 'speaking'.
           if (!alive.current) return;
+          stopFollow();
           setError(msg);
           if (phaseRef.current === 'speaking') {
             stopBarge();
@@ -372,7 +401,7 @@ export function VoiceMode({
           }
         }, () => {
           if (!alive.current || phaseRef.current !== 'speaking') return;
-          // Mic stays open so the answer can be interrupted mid-sentence.
+          followAlong(utterId, answer);
           startBarge(answer);
         });
 
@@ -391,7 +420,7 @@ export function VoiceMode({
         setPhaseBoth('error');
       }
     },
-    [onAsk, startBarge],
+    [followAlong, onAsk, startBarge, stopFollow],
   );
 
   thinkRef.current = (text: string) => {
@@ -404,6 +433,7 @@ export function VoiceMode({
     return () => {
       alive.current = false;
       if (safety.current) clearTimeout(safety.current);
+      stopFollow();
       stopBarge();
       cancelListening();
       stopAllSpeech();
@@ -434,6 +464,8 @@ export function VoiceMode({
       // Manual interruption!
       queryEpoch.current++;
       pendingQuery.current = '';
+      stopFollow();
+      setProgress(0);
       stopAllSpeech();
       stopBarge();
       listenRef.current();
@@ -462,9 +494,6 @@ export function VoiceMode({
             ? 'paused · tap to resume'
             : 'error';
 
-  const ringScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.9] });
-  const ringOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0] });
-
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   return (
@@ -481,42 +510,7 @@ export function VoiceMode({
       </View>
 
       <View style={styles.center}>
-        <View style={styles.orbWrap}>
-          {(phase === 'listening' || phase === 'speaking') && (
-            <Animated.View
-              style={[
-                styles.ring,
-                { borderColor: phase === 'speaking' ? colors.ok : colors.accent },
-                { transform: [{ scale: ringScale }], opacity: ringOpacity },
-              ]}
-            />
-          )}
-          <TouchableOpacity
-            activeOpacity={0.85}
-            onPress={handleOrbPress}
-            style={[
-              styles.orb,
-              phase === 'speaking' && { backgroundColor: colors.ok, shadowColor: colors.ok },
-              phase === 'thinking' && { backgroundColor: colors.accentDim, shadowColor: colors.accentDim },
-            ]}
-          >
-            <Ionicons
-              name={
-                phase === 'speaking'
-                  ? 'volume-high'
-                  : phase === 'thinking'
-                    ? 'sparkles'
-                    : phase === 'error'
-                      ? 'alert'
-                      : phase === 'paused'
-                        ? 'play'
-                        : 'mic'
-              }
-              size={38}
-              color="#fff"
-            />
-          </TouchableOpacity>
-        </View>
+        <VoiceHud phase={phase} colors={colors} onPress={handleOrbPress} />
 
         <Text style={styles.phase}>{label}</Text>
 
@@ -527,9 +521,7 @@ export function VoiceMode({
         )}
 
         {!!reply && phase !== 'listening' && (
-          <Text style={styles.reply} numberOfLines={6}>
-            {reply}
-          </Text>
+          <TranscriptCard text={reply} progress={progress} colors={colors} />
         )}
 
         {!!error && <Text style={styles.error}>{error}</Text>}
@@ -541,13 +533,14 @@ export function VoiceMode({
             <Ionicons name="refresh" size={18} color="#fff" />
             <Text style={styles.retryText}>Try again</Text>
           </TouchableOpacity>
-        ) : (
-          <Text style={styles.hint}>
-            {hasSTT
-              ? 'Say “stop” or tap to cut the answer · anything else you say is asked next'
-              : 'Speech module missing'}
-          </Text>
-        )}
+        ) : !hasSTT ? (
+          <Text style={styles.hint}>Speech module missing</Text>
+        ) : phase === 'listening' ? (
+          // Only while waiting for a question. Once an answer is on screen the
+          // card owns that space, and a permanent instruction line above the
+          // reply is just noise.
+          <Text style={styles.hint}>Say “stop” or tap to interrupt</Text>
+        ) : null}
 
         <TouchableOpacity style={styles.endBtn} onPress={end}>
           <Ionicons name="call" size={26} color="#fff" style={{ transform: [{ rotate: '135deg' }] }} />

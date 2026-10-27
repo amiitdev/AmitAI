@@ -162,21 +162,20 @@ export function stopSpeaking() {
   } catch {}
 }
 
-/** ElevenLabs TTS. Resolves once playback has started. */
-export async function speakCloud(
+/** Offline neural TTS (piper / kitten), bundled — no key, no network. */
+export async function speakLocal(
   text: string,
-  apiKey: string,
-  voiceId: string,
-  model: string,
+  engine: 'piper' | 'kitten',
+  voiceId: number,
   speed = 1,
-  utteranceId = `amitai-cloud-${Date.now()}`,
+  utteranceId = `amitai-local-${Date.now()}`,
 ): Promise<void> {
-  if (!AmitVoice?.speakCloud) throw new Error('cloud voice not linked in this build');
-  if (!apiKey) throw new Error('add your ElevenLabs key in Settings');
-  await AmitVoice.speakCloud(text, apiKey, voiceId, model, speed, utteranceId);
+  if (!AmitVoice?.speakLocal) throw new Error('Offline voice is not available in this build');
+  await AmitVoice.speakLocal(text, engine, voiceId, speed, utteranceId);
 }
 
-export function stopCloud() {
+/** Stop whatever media playback the offline voices started. */
+export function stopLocal() {
   try {
     AmitVoice?.stopCloud?.();
   } catch {}

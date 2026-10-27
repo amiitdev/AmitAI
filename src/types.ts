@@ -65,11 +65,15 @@ export interface Settings {
   maxPages: number;
 
   /* ---- voice ---- */
-  /** 'device' = Android TextToSpeech (free, instant), 'elevenlabs' = cloud */
-  ttsProvider: 'device' | 'elevenlabs';
-  elevenLabsKey: string;
-  elevenLabsVoiceId: string;
-  /** 0.5 = half speed, 1.0 = normal, 2.0 = double (device voice) */
+  /**
+   * 'device'  = Android TextToSpeech (always available, tiny)
+   * 'piper'   = offline neural voice bundled in the app
+   * 'kitten'  = offline neural voice bundled in the app, 8 speakers
+   */
+  ttsProvider: 'device' | 'piper' | 'kitten';
+  /** speaker id for the neural voices (kitten only), 0-based */
+  ttsVoice: number;
+  /** 0.5 = half speed, 1.0 = normal, 2.0 = double */
   ttsSpeed: number;
 
   /* ---- diagnostics ---- */
@@ -121,8 +125,7 @@ export const DEFAULT_SETTINGS: Settings = {
   readerMode: 'fetch',
   maxPages: 3,
   ttsProvider: 'device',
-  elevenLabsKey: '',
-  elevenLabsVoiceId: 'pNInz6obpgDQGcFmaJgB',
+  ttsVoice: 0,
   ttsSpeed: 1,
   simulate429: false,
   theme: 'midnight',
@@ -135,8 +138,6 @@ export const DEFAULT_SETTINGS: Settings = {
   toolsSchedules: true,
   toolsChatHistory: true,
 };
-
-export const ELEVEN_MODEL = 'eleven_flash_v2_5';
 
 /* ------------------------------------------------------------------ */
 /* Providers — everything speaks the OpenAI wire format                */
@@ -227,18 +228,16 @@ export const OPENROUTER_FREE: ProviderDef[] = [
 export const providerByName = (name: string): ProviderDef | undefined =>
   PROVIDERS.find(p => p.name === name);
 
-/**
- * Voices verified to work on ElevenLabs' free tier via the API.
- * Library voices (e.g. Rachel) return 402 paid_plan_required, so they are not
- * listed — picking one would only produce an error at speak time.
- */
-export const ELEVEN_VOICES: { id: string; name: string; note: string }[] = [
-  { id: 'pNInz6obpgDQGcFmaJgB', name: 'Adam', note: 'deep, neutral' },
-  { id: 'EXAVITQu4vr4xnSDxMaL', name: 'Bella', note: 'soft, warm' },
-  { id: 'ErXwobaYiN019PkySvjV', name: 'Antoni', note: 'bright, even' },
-  { id: 'onwK4e9ZLuTAKqWW03F9', name: 'Daniel', note: 'news-anchor' },
-  { id: 'cjVigY5qzO86Huf0OWal', name: 'Eric', note: 'friendly' },
-  { id: 'JBFqnCBsd6RMkjVDRZzb', name: 'George', note: 'narration' },
+/** KittenTTS nano v0.8 voices, in speaker-id order (index = ttsVoice). */
+export const KITTEN_VOICES: { id: number; name: string; note: string }[] = [
+  { id: 0, name: 'Bella', note: 'soft, warm' },
+  { id: 1, name: 'Jasper', note: 'deep, neutral' },
+  { id: 2, name: 'Luna', note: 'bright' },
+  { id: 3, name: 'Bruno', note: 'low, calm' },
+  { id: 4, name: 'Rosie', note: 'friendly' },
+  { id: 5, name: 'Hugo', note: 'narration' },
+  { id: 6, name: 'Kiki', note: 'light' },
+  { id: 7, name: 'Leo', note: 'even' },
 ];
 
 /** Rough $ per 1M tokens, for the cost readout. Update as prices move. */

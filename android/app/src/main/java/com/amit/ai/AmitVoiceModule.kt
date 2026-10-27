@@ -386,14 +386,42 @@ class AmitVoiceModule(private val ctx: ReactApplicationContext) :
     if (id != null) emit("AmitVoiceSpeakingEnd", idBundle(id))
   }
 
-  /* --------------------------- cloud TTS (ElevenLabs) -------------------- */
+  /* --------------------------- on-device neural TTS --------------------- */
 
   private fun stopMedia() {
+    main.removeCallbacks(progressTicker)
     player?.let { p ->
       try { p.stop() } catch (_: Exception) {}
       try { p.release() } catch (_: Exception) {}
     }
     player = null
+  }
+
+  /**
+   * Playback position, so the transcript on screen can follow the voice word
+   * by word. Emitted on its own event (the generic emit() coerces numbers to
+   * strings) and only while the player is alive.
+   */
+  private val progressTicker = object : Runnable {
+    override fun run() {
+      val mp = player ?: return
+      val id = cloudUtterance ?: return
+      val duration = try { mp.duration } catch (_: Exception) { -1 }
+      if (duration <= 0) {
+        main.postDelayed(this, 150L)
+        return
+      }
+      val position = try { mp.currentPosition } catch (_: Exception) { 0 }
+      if (ctx.hasActiveReactInstance()) {
+        val map = Arguments.createMap()
+        map.putString("id", id)
+        map.putDouble("position", position.toDouble())
+        map.putDouble("duration", duration.toDouble())
+        ctx.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+            .emit("AmitVoiceProgress", map)
+      }
+      main.postDelayed(this, 150L)
+    }
   }
 
   @ReactMethod
@@ -409,22 +437,53 @@ class AmitVoiceModule(private val ctx: ReactApplicationContext) :
     }
   }
 
+  private fun playFile(
+      file: java.io.File,
+      utteranceId: String,
+      promise: com.facebook.react.bridge.Promise,
+  ) {
+    try {
+      stopMedia()
+      val mp = MediaPlayer()
+      mp.setDataSource(file.absolutePath)
+      mp.setOnCompletionListener {
+        main.removeCallbacks(progressTicker)
+        it.release()
+        if (player === it) player = null
+        file.delete()
+        if (cloudUtterance == utteranceId) {
+          cloudUtterance = null
+          emit("AmitVoiceSpeakingEnd", idBundle(utteranceId))
+        }
+      }
+      mp.prepare()
+      mp.start()
+      player = mp
+      main.removeCallbacks(progressTicker)
+      main.post(progressTicker)
+      emit("AmitVoiceSpeakingStart", idBundle(utteranceId))
+      promise.resolve(true)
+    } catch (e: Exception) {
+      file.delete()
+      promise.reject("localtts_playback", e)
+    }
+  }
+
   /**
-   * Fetch speech from ElevenLabs and play it.
+   * Synthesize and play with one of the bundled offline engines (piper/kitten).
    *
-   * Done here rather than in JS because the response is audio bytes and the
-   * request needs an `xi-api-key` header — MediaPlayer can play a local file,
-   * not an authenticated stream.
+   * Synthesis is CPU-heavy, so it runs on a worker thread and only the finished
+   * WAV goes back to the main thread for MediaPlayer. Event ids match the
+   * device-TTS path, so the speaker button behaves the same either way.
    */
   @ReactMethod
-  fun speakCloud(
-    text: String,
-    apiKey: String,
-    voiceId: String,
-    model: String,
-    speed: Double,
-    utteranceId: String,
-    promise: com.facebook.react.bridge.Promise,
+  fun speakLocal(
+      text: String,
+      engine: String,
+      voiceId: Int,
+      speed: Double,
+      utteranceId: String,
+      promise: com.facebook.react.bridge.Promise,
   ) {
     main.post {
       stopMedia()
@@ -432,74 +491,22 @@ class AmitVoiceModule(private val ctx: ReactApplicationContext) :
     }
 
     Thread {
-      var file: java.io.File? = null
       try {
-        val endpoint =
-            "https://api.elevenlabs.io/v1/text-to-speech/$voiceId?output_format=mp3_22050_32"
-        val conn = (java.net.URL(endpoint).openConnection() as java.net.HttpURLConnection).apply {
-          requestMethod = "POST"
-          doOutput = true
-          connectTimeout = 20000
-          readTimeout = 40000
-          setRequestProperty("xi-api-key", apiKey)
-          setRequestProperty("Content-Type", "application/json")
-          setRequestProperty("Accept", "audio/mpeg")
+        val tts = LocalTts.get(ctx, engine)
+        val audio = tts.generate(text, voiceId, speed.toFloat())
+        if (audio.samples.isEmpty()) {
+          throw IllegalStateException("the voice produced no audio")
         }
-
-        val vs = org.json.JSONObject()
-            .put("stability", 0.45)
-            .put("similarity_boost", 0.8)
-        if (speed > 0.0) vs.put("speed", speed)
-        val body = org.json.JSONObject()
-            .put("text", text)
-            .put("model_id", model)
-            .put("voice_settings", vs)
-            .toString()
-
-        conn.outputStream.use { it.write(body.toByteArray()) }
-
-        val code = conn.responseCode
-        if (code !in 200..299) {
-          val msg = conn.errorStream?.bufferedReader()?.readText().orEmpty().take(240)
-          conn.disconnect()
-          promise.reject("elevenlabs_http_$code", msg)
-          return@Thread
-        }
-
-        val out = java.io.File(ctx.cacheDir, "tts_${System.currentTimeMillis()}.mp3")
-        conn.inputStream.use { input -> out.outputStream().use { input.copyTo(it) } }
-        conn.disconnect()
-        file = out
-
-        main.post {
-          try {
-            stopMedia()
-            val mp = MediaPlayer()
-            mp.setDataSource(out.absolutePath)
-            mp.setOnCompletionListener {
-              it.release()
-              if (player === it) player = null
-              out.delete()
-              if (cloudUtterance == utteranceId) {
-                cloudUtterance = null
-                emit("AmitVoiceSpeakingEnd", idBundle(utteranceId))
-              }
-            }
-            mp.prepare()
-            mp.start()
-            player = mp
-            emit("AmitVoiceSpeakingStart", idBundle(utteranceId))
-            promise.resolve(true)
-          } catch (e: Exception) {
-            promise.reject("elevenlabs_playback", e)
-          }
-        }
-      } catch (e: Exception) {
-        file?.delete()
-        promise.reject("elevenlabs_network", e)
+        val out = java.io.File(ctx.cacheDir, "tts_${System.currentTimeMillis()}.wav")
+        LocalTts.writeWav(out, audio.samples, audio.sampleRate)
+        main.post { playFile(out, utteranceId, promise) }
+      } catch (e: Throwable) {
+        if (cloudUtterance == utteranceId) cloudUtterance = null
+        promise.reject("localtts_${engine}", e.message ?: "voice synthesis failed", e)
       }
     }.start()
   }
+
 
   /* ------------------------- settings storage --------------------------- */
 
@@ -576,9 +583,8 @@ class AmitVoiceModule(private val ctx: ReactApplicationContext) :
     override fun onEndOfSpeech() {}
 
     override fun onError(error: Int) {
-      if (sttAttempt < 3 && (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY ||
-          error == SpeechRecognizer.ERROR_AUDIO || error == SpeechRecognizer.ERROR_CLIENT)) {
-        retryOrFail("Recognizer busy", error)
+      if (isTransient(error)) {
+        retryOrFail(null, error)
         return
       }
       MicGate.sttActive = false
@@ -587,8 +593,7 @@ class AmitVoiceModule(private val ctx: ReactApplicationContext) :
         SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "Timed out waiting for speech"
         SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Microphone permission denied"
         SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Recognizer needs a network connection"
-        SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Recognizer busy"
-        else -> "Speech error $error"
+        else -> "Voice input failed - tap to retry"
       }
       emitError(msg, "stt", error)
       emit("AmitVoiceEnd", null)
@@ -668,19 +673,24 @@ class AmitVoiceModule(private val ctx: ReactApplicationContext) :
   }
 
   /**
-   * Google's service is occasionally still releasing the mic (another app, the
-   * previous session, TTS). Retry quickly instead of surfacing "Recognizer
-   * busy" as a hard error.
+   * Google's service is often still releasing the mic (another app, the
+   * previous session, audio routing). ERROR_CLIENT (5) in particular is what
+   * the recogniser reports when its session is torn down mid-flight, so it is
+   * transient — never a reason to show the user a raw "Speech error 5".
    */
-  private fun retryOrFail(msg: String, code: Int) {
-    if (sttAttempt < 3 && (code == SpeechRecognizer.ERROR_RECOGNIZER_BUSY ||
-        code == SpeechRecognizer.ERROR_AUDIO || code == SpeechRecognizer.ERROR_CLIENT)) {
+  private fun isTransient(code: Int): Boolean =
+      code == SpeechRecognizer.ERROR_CLIENT ||
+          code == SpeechRecognizer.ERROR_AUDIO ||
+          code == SpeechRecognizer.ERROR_RECOGNIZER_BUSY
+
+  private fun retryOrFail(msg: String?, code: Int) {
+    if (isTransient(code) && sttAttempt < 8) {
       sttAttempt++
-      main.postDelayed({ if (MicGate.sttActive) listenInternal() }, 300L)
+      main.postDelayed({ if (MicGate.sttActive) listenInternal() }, 260L + sttAttempt * 140L)
       return
     }
     MicGate.sttActive = false
-    emitError(msg, "stt", code)
+    emitError(msg ?: "Microphone is busy - tap to retry", "stt", code)
     emit("AmitVoiceEnd", null)
   }
 

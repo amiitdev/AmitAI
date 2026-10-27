@@ -18,11 +18,11 @@ jest.mock('../src/lib/native', () => ({
   hasVoice: true,
   speak: jest.fn(),
   stopSpeaking: jest.fn(),
-  speakCloud: jest.fn(async () => {}),
-  stopCloud: jest.fn(),
+  speakLocal: jest.fn(async () => {}),
+  stopLocal: jest.fn(),
 }));
 
-import { speak, stopSpeaking, stopCloud } from '../src/lib/native';
+import { speak, stopSpeaking, stopLocal } from '../src/lib/native';
 import { speakAloud, stopAllSpeech, configureVoice } from '../src/lib/speech';
 
 const end = (id?: string) =>
@@ -37,8 +37,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   configureVoice({
     ttsProvider: 'device',
-    elevenLabsKey: '',
-    elevenLabsVoiceId: '',
+    ttsVoice: 0,
     ttsSpeed: 1,
   });
 });
@@ -87,7 +86,7 @@ describe('speech · utterance ids', () => {
     stopAllSpeech();
     stopAllSpeech();
     expect(stopSpeaking).toHaveBeenCalledTimes(2);
-    expect(stopCloud).toHaveBeenCalledTimes(2);
+    expect(stopLocal).toHaveBeenCalledTimes(2);
   });
 
   test('an engine error unsticks the UI and reports the reason', () => {
@@ -105,15 +104,14 @@ describe('speech · utterance ids', () => {
     expect(onError).toHaveBeenCalledWith('Text-to-speech is not ready on this phone.');
   });
 
-  test('a cloud TTS rejection reports why instead of playing silence', async () => {
+  test('an offline voice rejection reports why instead of playing silence', async () => {
     const native = jest.requireMock('../src/lib/native');
-    (native.speakCloud as jest.Mock).mockRejectedValueOnce(
-      new Error('elevenlabs_http_401: invalid_api_key'),
+    (native.speakLocal as jest.Mock).mockRejectedValueOnce(
+      new Error('localtts_piper: model failed to load'),
     );
     configureVoice({
-      ttsProvider: 'elevenlabs',
-      elevenLabsKey: 'bad',
-      elevenLabsVoiceId: 'v',
+      ttsProvider: 'piper',
+      ttsVoice: 0,
       ttsSpeed: 1,
     });
 
@@ -125,7 +123,7 @@ describe('speech · utterance ids', () => {
 
     expect(onDone).not.toHaveBeenCalled();
     expect(onError).toHaveBeenCalledTimes(1);
-    expect(onError.mock.calls[0][0]).toMatch(/key rejected/i);
+    expect(onError.mock.calls[0][0]).toMatch(/could not run on this phone/i);
   });
 
   test('"started playing" is reported for the matching utterance only', () => {
@@ -199,16 +197,18 @@ describe('speech · utterance ids', () => {
     expect(onError).not.toHaveBeenCalled();
   });
 
-  test('elevenlabs path sends the same utterance id', async () => {
+  test('the offline path sends engine, voice and the same utterance id', async () => {
     configureVoice({
-      ttsProvider: 'elevenlabs',
-      elevenLabsKey: 'k',
-      elevenLabsVoiceId: 'v',
-      ttsSpeed: 1,
+      ttsProvider: 'kitten',
+      ttsVoice: 3,
+      ttsSpeed: 1.2,
     });
-    const id = speakAloud('cloud answer');
+    const id = speakAloud('offline answer');
     await Promise.resolve();
-    const call = (jest.requireMock('../src/lib/native').speakCloud as jest.Mock).mock.calls[0];
-    expect(call[5]).toBe(id);
+    const call = (jest.requireMock('../src/lib/native').speakLocal as jest.Mock).mock.calls[0];
+    expect(call[1]).toBe('kitten');
+    expect(call[2]).toBe(3);
+    expect(call[3]).toBe(1.2);
+    expect(call[4]).toBe(id);
   });
 });

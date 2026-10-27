@@ -199,14 +199,12 @@ function AppInner() {
   useEffect(() => {
     configureVoice({
       ttsProvider: settings.ttsProvider,
-      elevenLabsKey: settings.elevenLabsKey,
-      elevenLabsVoiceId: settings.elevenLabsVoiceId,
+      ttsVoice: settings.ttsVoice,
       ttsSpeed: settings.ttsSpeed,
     });
   }, [
     settings.ttsProvider,
-    settings.elevenLabsKey,
-    settings.elevenLabsVoiceId,
+    settings.ttsVoice,
     settings.ttsSpeed,
   ]);
 
@@ -664,7 +662,11 @@ function AppInner() {
           }}
           onAsk={askForVoice}
           voiceLabel={
-            settings.ttsProvider === 'elevenlabs' ? 'ElevenLabs voice' : 'Device voice'
+            settings.ttsProvider === 'device'
+              ? 'Device voice'
+              : settings.ttsProvider === 'piper'
+                ? 'Piper voice'
+                : 'Kitten voice'
           }
         />
       ) : screen === 'settings' ? (

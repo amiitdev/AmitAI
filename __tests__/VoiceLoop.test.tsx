@@ -28,6 +28,7 @@ jest.mock('../src/lib/native', () => ({
 jest.mock('../src/lib/speech', () => ({
   speakAloud: jest.fn(),
   stopAllSpeech: jest.fn(),
+  watchSpeechProgress: jest.fn(() => () => {}),
 }));
 
 const native = jest.requireMock('../src/lib/native');
@@ -93,13 +94,15 @@ describe('voice mode · conversation loop', () => {
       sessions[0].onText('what is a monad', true);
     });
     await settle();
-    expect(onAsk).toHaveBeenCalledWith('what is a monad');
 
-    // Playback started: only now is the barge-in mic opened.
     await ReactTestRenderer.act(async () => {
       speechStarted?.();
     });
     await settle();
+
+    // While the answer plays the mic stays shut (opening it cuts playback on
+    // many phones), so no second recogniser session may appear here.
+    expect(sessions).toHaveLength(1);
 
     // The answer finished playing; the loop reopens the mic.
     await ReactTestRenderer.act(async () => {
@@ -108,9 +111,11 @@ describe('voice mode · conversation loop', () => {
     await settle();
     expect(sessions.length).toBeGreaterThanOrEqual(2);
 
+    const before = sessions.length;
+
     // A normal follow-up: it shares only ordinary words with the answer.
     await ReactTestRenderer.act(async () => {
-      sessions[sessions.length - 1].onText('what is the weather in paris today', true);
+      sessions[before - 1].onText('what is the weather in paris today', true);
     });
     await settle();
 
@@ -120,7 +125,7 @@ describe('voice mode · conversation loop', () => {
     await ReactTestRenderer.act(async () => tree.unmount());
   });
 
-  test('a question spoken over the answer is never cut short - it is asked next', async () => {
+  test('the microphone is closed for the whole answer, then reopens', async () => {
     const onAsk = jest.fn(async () => ANSWER);
     const tree = await renderVoice(onAsk);
     await settle();
@@ -132,25 +137,18 @@ describe('voice mode · conversation loop', () => {
     await ReactTestRenderer.act(async () => {
       speechStarted?.();
     });
-    // past the audio-onset guard
     await settle(650);
 
-    await ReactTestRenderer.act(async () => {
-      sessions[sessions.length - 1].onText('how do i install docker on windows', true);
-    });
-    await settle();
-
-    // The answer keeps playing; the question is kept for afterwards.
-    expect(speech.stopAllSpeech).not.toHaveBeenCalled();
-    expect(onAsk).toHaveBeenCalledTimes(1);
+    expect(native.startListening).toHaveBeenCalledTimes(1);
+    expect(sessions).toHaveLength(1);
 
     await ReactTestRenderer.act(async () => {
       speechDone?.();
     });
     await settle();
 
-    expect(onAsk).toHaveBeenCalledTimes(2);
-    expect(onAsk).toHaveBeenLastCalledWith('how do i install docker on windows');
+    expect(native.startListening).toHaveBeenCalledTimes(2);
+    expect(onAsk).toHaveBeenCalledTimes(1);
 
     await ReactTestRenderer.act(async () => tree.unmount());
   });

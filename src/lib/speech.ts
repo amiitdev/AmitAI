@@ -1,17 +1,13 @@
 import { useEffect, useReducer } from 'react';
 import { DeviceEventEmitter } from 'react-native';
-import { hasTTS, speak, stopSpeaking, speakCloud, stopCloud } from './native';
-import { ELEVEN_MODEL, Settings } from '../types';
+import { hasTTS, speak, stopSpeaking, speakLocal, stopLocal } from './native';
+import { Settings } from '../types';
 
 /** Module-level copy of the settings that matter for speaking, so the
  *  per-message hook does not need to thread settings through every bubble. */
-let voiceConfig: Pick<
-  Settings,
-  'ttsProvider' | 'elevenLabsKey' | 'elevenLabsVoiceId' | 'ttsSpeed'
-> = {
+let voiceConfig: Pick<Settings, 'ttsProvider' | 'ttsVoice' | 'ttsSpeed'> = {
   ttsProvider: 'device',
-  elevenLabsKey: '',
-  elevenLabsVoiceId: '',
+  ttsVoice: 0,
   ttsSpeed: 1,
 };
 
@@ -33,17 +29,14 @@ function cleanForSpeech(text: string): string {
     .slice(0, 2500);
 }
 
-/** Turn a rejected cloud call into something worth showing the user. */
+/** Turn a rejected native call into something worth showing the user. */
 function describeSpeechError(e: any): string {
   const raw = String(e?.message ?? e ?? '');
-  if (/401|403|invalid_api_key|unauthor/i.test(raw)) {
-    return 'Voice key rejected - check the ElevenLabs key in Settings';
-  }
-  if (/402|paid_plan_required|quota/i.test(raw)) {
-    return 'This voice is not on the ElevenLabs free tier - pick another in Settings';
+  if (/localtts_/.test(raw)) {
+    return 'The offline voice could not run on this phone - pick Device voice in Settings.';
   }
   if (/network|timeout|resolve host|connect/i.test(raw)) {
-    return 'No network for cloud voice - check the connection';
+    return 'No network - check the connection';
   }
   return raw || 'Speech failed';
 }
@@ -53,15 +46,9 @@ export async function speakWithConfig(text: string, utteranceId: string): Promis
   const clean = cleanForSpeech(text);
   if (!clean) return;
 
-  if (voiceConfig.ttsProvider === 'elevenlabs' && voiceConfig.elevenLabsKey) {
-    await speakCloud(
-      clean,
-      voiceConfig.elevenLabsKey,
-      voiceConfig.elevenLabsVoiceId,
-      ELEVEN_MODEL,
-      voiceConfig.ttsSpeed,
-      utteranceId,
-    );
+  const engine = voiceConfig.ttsProvider;
+  if (engine === 'piper' || engine === 'kitten') {
+    await speakLocal(clean, engine, voiceConfig.ttsVoice, voiceConfig.ttsSpeed, utteranceId);
     return;
   }
   speak(clean, voiceConfig.ttsSpeed, utteranceId);
@@ -88,6 +75,8 @@ const errorHandlers = new Map<string, (message: string) => void>();
 const startHandlers = new Map<string, () => void>();
 /** Device engines start within a beat; silence this long is a real failure. */
 const START_TIMEOUT_MS = 2500;
+/** Offline neural voices synthesize on the CPU first, so they get longer. */
+const NEURAL_START_TIMEOUT_MS = 30000;
 let seq = 0;
 
 const nextId = () => `amitai-${Date.now()}-${++seq}`;
@@ -112,6 +101,7 @@ function settle(id: string, failure?: string) {
     currentMessage = null;
     notify();
   }
+  progressHandlers.delete(id);
 
   if (failure !== undefined) onError?.(failure);
   else onDone?.();
@@ -124,6 +114,33 @@ DeviceEventEmitter.addListener('AmitVoiceSpeakingStart', (e: any) => {
   if (!onStart) return;
   startHandlers.delete(id);
   onStart();
+});
+
+/** Progress of the utterance currently playing, 0..1. */
+export type SpeechProgress = { fraction: number };
+const progressHandlers = new Map<string, (p: SpeechProgress) => void>();
+
+/**
+ * Word-by-word follow along: native reports the player position while the
+ * offline voice speaks, so the transcript can scroll with the audio instead of
+ * guessing. Device TTS has no position API; callers fall back to a timer.
+ */
+export function watchSpeechProgress(id: string, cb: (p: SpeechProgress) => void): () => void {
+  progressHandlers.set(id, cb);
+  return () => {
+    if (progressHandlers.get(id) === cb) progressHandlers.delete(id);
+  };
+}
+
+DeviceEventEmitter.addListener('AmitVoiceProgress', (e: any) => {
+  const id = typeof e?.id === 'string' ? e.id : null;
+  if (!id) return;
+  const cb = progressHandlers.get(id);
+  if (!cb) return;
+  const duration = Number(e?.duration) || 0;
+  if (duration <= 0) return;
+  const position = Number(e?.position) || 0;
+  cb({ fraction: Math.max(0, Math.min(1, position / duration)) });
 });
 
 DeviceEventEmitter.addListener('AmitVoiceSpeakingEnd', (e: any) => {
@@ -166,10 +183,11 @@ export function stopAllSpeech() {
     waiters.delete(id);
     errorHandlers.delete(id);
     startHandlers.delete(id);
+    progressHandlers.delete(id);
   }
   notify();
   stopSpeaking();
-  stopCloud();
+  stopLocal();
 }
 
 /**
@@ -195,24 +213,22 @@ export function speakAloud(
   if (onError) errorHandlers.set(id, onError);
   activeUtterance = id;
 
-  const isCloud = voiceConfig.ttsProvider === 'elevenlabs' && !!voiceConfig.elevenLabsKey;
+  // The neural voices need a few seconds to synthesize before anything plays.
+  const neural = voiceConfig.ttsProvider !== 'device';
   if (onStart) startHandlers.set(id, onStart);
-  else if (!isCloud) startHandlers.set(id, () => {}); // watchdog only
+  else startHandlers.set(id, () => {}); // watchdog only
 
   speakWithConfig(text, id).catch(e => settle(id, describeSpeechError(e)));
 
-  if (!isCloud) {
-    // An engine that accepts the text and then never starts (no voice data,
-    // muted stream, dead engine) used to leave voice mode sitting in
-    // "speaking…" with nothing but silence. Say what happened instead.
-    setTimeout(() => {
-      if (!startHandlers.has(id)) return; // it started (or was stopped)
-      settle(
-        id,
-        'The voice engine is not playing audio - open Settings › Text-to-speech and install a voice.',
-      );
-    }, START_TIMEOUT_MS);
-  }
+  setTimeout(() => {
+    if (!startHandlers.has(id)) return; // it started (or was stopped)
+    settle(
+      id,
+      neural
+        ? 'The offline voice could not run on this phone - pick Device voice in Settings.'
+        : 'The voice engine is not playing audio - open Settings › Text-to-speech and install a voice.',
+    );
+  }, neural ? NEURAL_START_TIMEOUT_MS : START_TIMEOUT_MS);
 
   return id;
 }

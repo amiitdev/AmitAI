@@ -10,7 +10,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import Ionicons from '@react-native-vector-icons/ionicons';
-import { Settings, PRESETS, DEFAULT_SETTINGS, ELEVEN_VOICES, PROVIDERS, OPENROUTER_FREE, ProviderDef } from '../types';
+import { Settings, PRESETS, DEFAULT_SETTINGS, KITTEN_VOICES, PROVIDERS, OPENROUTER_FREE, ProviderDef } from '../types';
 import { getWeeklyUsage, resetUsage } from '../lib/usage';
 import { useTheme, THEMES, ThemeKey, ThemeColors, radius, space, mono } from '../theme';
 import { ping } from '../api/openai';
@@ -574,7 +574,8 @@ export function SettingsScreen({ settings, onChange, onBack, onClearChats }: Pro
         {(
           [
             ['device', 'Device', 'free, instant'],
-            ['elevenlabs', 'ElevenLabs', 'natural, cloud'],
+            ['piper', 'Piper', 'natural, offline'],
+            ['kitten', 'Kitten', '8 voices, offline'],
           ] as const
         ).map(([mode, label, hint]) => (
           <TouchableOpacity
@@ -640,43 +641,38 @@ export function SettingsScreen({ settings, onChange, onBack, onClearChats }: Pro
         </>
       )}
 
-      {settings.ttsProvider === 'elevenlabs' && (
+      {(settings.ttsProvider === 'piper' || settings.ttsProvider === 'kitten') && (
         <>
-          <View style={styles.field}>
-            <Text style={styles.label}>ElevenLabs API key</Text>
-            <TextInput
-              style={styles.input}
-              value={settings.elevenLabsKey}
-              onChangeText={t => onChange({ elevenLabsKey: t })}
-              placeholder="sk_..."
-              placeholderTextColor={colors.textFaint}
-              secureTextEntry
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            <Text style={styles.hint}>Free tier works with the voices below. Library voices (Rachel etc.) are blocked by ElevenLabs on free plans.</Text>
-          </View>
+          <Text style={styles.hint}>
+            {settings.ttsProvider === 'piper'
+              ? 'Piper (Lessac) runs entirely on this phone — no network, no key.'
+              : 'KittenTTS runs entirely on this phone — no network, no key.'}
+          </Text>
 
-          <Text style={styles.label}>Voice</Text>
-          <View style={styles.chips}>
-            {ELEVEN_VOICES.map(v => (
-              <TouchableOpacity
-                key={v.id}
-                style={[styles.chip, settings.elevenLabsVoiceId === v.id && styles.chipOn]}
-                onPress={() => onChange({ elevenLabsVoiceId: v.id })}
-              >
-                <Text
-                  style={[
-                    styles.chipText,
-                    settings.elevenLabsVoiceId === v.id && styles.chipTextOn,
-                  ]}
-                >
-                  {v.name}
-                </Text>
-                <Text style={styles.chipHint}>{v.note}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          {settings.ttsProvider === 'kitten' && (
+            <>
+              <Text style={styles.label}>Voice</Text>
+              <View style={styles.chips}>
+                {KITTEN_VOICES.map(v => (
+                  <TouchableOpacity
+                    key={v.id}
+                    style={[styles.chip, settings.ttsVoice === v.id && styles.chipOn]}
+                    onPress={() => onChange({ ttsVoice: v.id })}
+                  >
+                    <Text
+                      style={[
+                        styles.chipText,
+                        settings.ttsVoice === v.id && styles.chipTextOn,
+                      ]}
+                    >
+                      {v.name}
+                    </Text>
+                    <Text style={styles.chipHint}>{v.note}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </>
+          )}
 
           <TouchableOpacity
             style={styles.testBtn}
@@ -692,12 +688,9 @@ export function SettingsScreen({ settings, onChange, onBack, onClearChats }: Pro
             <Text style={styles.testText}>Test this voice</Text>
           </TouchableOpacity>
 
-          {/* Phone has no engine or no voice data for this language: the only
-              real fix is the system TTS screen, so link straight to it. */}
-          <TouchableOpacity style={styles.ttsFix} onPress={openTtsSettings}>
-            <Ionicons name="settings-outline" size={15} color={colors.textDim} />
-            <Text style={styles.ttsFixText}>Phone text-to-speech settings</Text>
-          </TouchableOpacity>
+          <Text style={styles.hint}>
+            First use takes a few seconds while the voice is unpacked from the app.
+          </Text>
         </>
       )}
 
