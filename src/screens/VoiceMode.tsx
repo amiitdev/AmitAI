@@ -494,6 +494,7 @@ export function VoiceMode({
             ? 'paused · tap to resume'
             : 'error';
 
+  const showReply = !!reply && phase !== 'listening';
   const styles = useMemo(() => createStyles(colors), [colors]);
 
   return (
@@ -510,19 +511,22 @@ export function VoiceMode({
       </View>
 
       <View style={styles.center}>
-        <VoiceHud phase={phase} colors={colors} onPress={handleOrbPress} />
+        {/* The answer needs the room, so the orb recedes once there is one. */}
+        <View style={showReply ? styles.hudBoxCompact : undefined}>
+          <View style={showReply ? styles.hudScale : undefined}>
+            <VoiceHud phase={phase} colors={colors} onPress={handleOrbPress} />
+          </View>
+        </View>
 
         <Text style={styles.phase}>{label}</Text>
 
         {!!heard && (
-          <Text style={styles.heard} numberOfLines={3}>
+          <Text style={styles.heard} numberOfLines={showReply ? 2 : 3}>
             “{heard}”
           </Text>
         )}
 
-        {!!reply && phase !== 'listening' && (
-          <TranscriptCard text={reply} progress={progress} colors={colors} />
-        )}
+        {showReply && <TranscriptCard text={reply} progress={progress} colors={colors} />}
 
         {!!error && <Text style={styles.error}>{error}</Text>}
       </View>
@@ -564,7 +568,15 @@ const createStyles = (colors: ThemeColors) =>
     },
     title: { color: colors.text, fontSize: 16, fontWeight: '700' },
     sub: { color: colors.textFaint, fontSize: 11, marginTop: 2 },
-    center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: space(4) },
+    center: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: space(4),
+      minHeight: 0,
+    },
+    hudBoxCompact: { height: 168, width: 236, alignItems: 'center', justifyContent: 'center' },
+    hudScale: { transform: [{ scale: 0.7 }] },
     orbWrap: { alignItems: 'center', justifyContent: 'center', marginBottom: space(4) },
     ring: {
       position: 'absolute',

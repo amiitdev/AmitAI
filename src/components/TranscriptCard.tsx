@@ -125,6 +125,7 @@ const createStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     wrap: {
       width: '100%',
+      flexShrink: 1,
       maxHeight: 258,
       minHeight: 118,
       borderRadius: radius.lg,

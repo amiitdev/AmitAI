@@ -38,5 +38,8 @@ describe('transcript · follow along', () => {
   test('numbered items and table rows keep their own line', () => {
     expect(plainMarkdown('1. first\n2. second')).toBe('1. first\n2. second');
     expect(plainMarkdown('| 1 | X300 | flagship |')).toBe('1 · X300 · flagship');
+    expect(
+      plainMarkdown('| # | Model | Why |\n|---|---|---|\n| 1 | X300 | flagship |'),
+    ).toBe('1 · X300 · flagship');
   });
 });

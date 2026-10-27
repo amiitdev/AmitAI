@@ -15,8 +15,9 @@ export function plainMarkdown(src: string): string {
     .replace(/^\s*>\s?/gm, '')
     .replace(/^\s*[-*+]\s+/gm, '• ')
     .replace(/^\s*(\d+)[.)]\s+/gm, '$1. ')
-    // table separator rows (|---|:--:|) carry no meaning when spoken
-    .replace(/^\s*\|?[\s:|-]{4,}\|?\s*$/gm, '')
+    // a header row followed by |---| is noise: drop it, then the rule itself
+    .replace(/^[^\n]*\n(?=\s*\|?[ :|-]{4,}\|?\s*$)/gm, '')
+    .replace(/^\s*\|?[ :|-]{4,}\|?\s*$/gm, '')
     // table rows become "a · b · c" on their own line
     .replace(/^\s*\|(.*)\|\s*$/gm, (_m, row: string) =>
       row
