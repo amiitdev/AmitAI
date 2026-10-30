@@ -33,6 +33,11 @@ const MODELS_FOR = (url: string): string[] => {
       'gemini-2.5-flash',
     ];
   }
+  if (url.includes(':8080')) {
+    // llama-server serves exactly one model — whichever run.sh loaded.
+    // These chips are labels for the loaded file, not a model picker.
+    return ['Qwen2.5-Coder-3B', 'Qwen2.5-Coder-1.5B', 'Qwen3-0.6B'];
+  }
   if (url.includes('11434')) return [];
   return ['gpt-5.1', 'gpt-5.1-mini', 'gpt-4.1-mini', 'gpt-4o-mini'];
 };

@@ -15,6 +15,7 @@ each). Download from the [Releases page](https://github.com/amiitdev/AmitAI/rele
 | `AmitAI-3.8.apk` | 3.8 | 11 | 101 MB | `e7215eafd5bd7a2531d4fef3a5717f26` |
 | `AmitAI-3.9.apk` | 3.9 | 12 | 101 MB | `b54e62bad7183b2fd76bf4fb467292b6` |
 | `AmitAI-4.0.apk` | 4.0 | 13 | 223 MB | `55e19eb307b54fcc106469acd93ebdde` |
+| `AmitAI-4.1.apk` | 4.1 | 14 | 223 MB | `658de4678e03b0c7c606a5d6b36988f0` |
 
 All builds: `com.amit.ai`, min SDK 24, target SDK 36. Through 3.9 the APKs carried
 four ABIs (`arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64`); 4.0 ships `arm64-v8a` and
@@ -22,6 +23,7 @@ four ABIs (`arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64`); 4.0 ships `arm64-v8a` a
 neural voices (78 MB), hence 223 MB.
 
 SHA-256 for 4.0: `4e989f67536a619ad2feca5f7941327b64050ad6966e550e431356b82b3afe79`
+SHA-256 for 4.1: `2c81326a1d8b19f75835c66f970a9d22cdec6a0aacc961ce38d85fc55ec59288`
 
 ## Note on 3.2
 

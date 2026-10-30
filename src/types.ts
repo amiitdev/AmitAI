@@ -176,6 +176,12 @@ export const PROVIDERS: ProviderDef[] = [
     model: 'opencode-free/deepseek-v4.1-flash-free',
     keyHint: 'Paste BRIDGE_TOKEN from Termux · phone-local, free models',
   },
+  {
+    name: 'Local (on-device)',
+    url: 'http://127.0.0.1:8080/v1',
+    model: 'Qwen2.5-Coder-3B',
+    keyHint: 'No key needed · run llama-server in Termux · 100% offline',
+  },
 ];
 
 /**

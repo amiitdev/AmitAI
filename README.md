@@ -18,7 +18,7 @@ memory, chat search, weather and clock — with **no telemetry, no account, no m
 [![React Native](https://img.shields.io/badge/React_Native-0.88-61dafb?style=for-the-badge&logo=react&logoColor=061a23)](https://reactnative.dev)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.2-7f52ff?style=for-the-badge&logo=kotlin&logoColor=white)](https://kotlinlang.org)
 
-![Version](https://img.shields.io/badge/version-4.0-6366f1?style=flat-square)
+![Version](https://img.shields.io/badge/version-4.1-6366f1?style=flat-square)
 ![Tests](https://img.shields.io/badge/tests-87_passed-10b981?style=flat-square)
 ![Voices](https://img.shields.io/badge/offline_voices-2-10b981?style=flat-square)
 ![TypeScript](https://img.shields.io/badge/tsc-0_errors-3178c6?style=flat-square&logo=typescript&logoColor=white)
@@ -31,11 +31,12 @@ memory, chat search, weather and clock — with **no telemetry, no account, no m
 
 ## ⬇ Download
 
-The newest build is **4.0** (`versionCode 13`). Every APK ever shipped is on the
+The newest build is **4.1** (`versionCode 14`). Every APK ever shipped is on the
 [**Releases page**](https://github.com/amiitdev/AmitAI/releases).
 
 | Version | What changed | Size | Link |
 |---|---|---|---|
+| **4.1** | **On-device local model** — a 5th provider for `llama-server` running in Termux on the phone itself (`127.0.0.1:8080/v1`), no key, no network, works offline next to the cloud providers | 223 MB | [AmitAI-4.1.apk](https://github.com/amiitdev/AmitAI/releases/download/v4.1/AmitAI-4.1.apk) |
 | **4.0** | **Offline neural voices** — Piper + KittenTTS run inside the app via sherpa-onnx (no key, no quota), audio-synced transcript with karaoke highlight, Jarvis-style voice HUD, STT survives `ERROR_CLIENT`, 87 tests | 223 MB | [AmitAI-4.0.apk](https://github.com/amiitdev/AmitAI/releases/download/v4.0/AmitAI-4.0.apk) |
 | 3.9 | **opencode MCP server** — the CLI agent on your phone can call AmitAI's memory, chat search, weather and clock; foreground service keeps it alive in the background | 101 MB | [AmitAI-3.9.apk](https://github.com/amiitdev/AmitAI/releases/download/v3.9/AmitAI-3.9.apk) |
 | 3.8 | memory + past-chat recall that works even on tool-less providers | 101 MB | [AmitAI-3.8.apk](https://github.com/amiitdev/AmitAI/releases/download/v3.8/AmitAI-3.8.apk) |
@@ -53,13 +54,17 @@ The newest build is **4.0** (`versionCode 13`). Every APK ever shipped is on the
 1. Download the APK on the phone.
 2. Tap it → Android asks to allow installs from this app → **Allow**.
 3. Open **AmitAI** → ☰ → **Settings**.
-4. Pick a provider (Gemini / OpenRouter / OpenAI / local bridge) **or** paste any
+4. Pick a provider (Gemini / OpenRouter / OpenAI / local bridge / on-device) **or** paste any
    OpenAI-compatible base URL.
 5. Paste the key → **Test connection** → it lists the models that endpoint serves.
 6. Back → type.
 
 No key? Point the Base URL at a local **Ollama** (`http://<laptop-ip>:11434/v1`)
 or the phone-local **AmitAI Bridge** (`http://127.0.0.1:8130/v1`).
+
+Want it fully offline? Run `llama-server` in Termux on the phone and pick the
+**Local (on-device)** provider (`http://127.0.0.1:8080/v1`) — no key, no network,
+the model runs on the phone's own CPU/GPU. See §13.
 
 > The APKs are signed with the Android **debug** keystore (like many side-loaded
 > builds). Consequence: they install fine, but Play Protect may warn, and a future
@@ -167,7 +172,7 @@ clock, clipboard, memory, scheduler) runs locally.
 
 | Feature | Detail |
 |---|---|
-| 4 one-tap providers | Gemini · OpenRouter · OpenAI · AmitAI Bridge (phone-local) |
+| 5 one-tap providers | Gemini · OpenRouter · OpenAI · AmitAI Bridge (phone-local) · Local on-device |
 | Any OpenAI-compatible URL | Ollama, LM Studio, vLLM, gateways, self-hosted |
 | Per-provider key vault | switching Gemini ↔ OpenRouter keeps **both** keys |
 | Live model list | `GET /models` on *Test connection*; pick from what really exists |
@@ -1292,6 +1297,50 @@ $ ls -lh AmitAI-3.9.apk
 | **OpenRouter** | `openrouter.ai/api/v1` | `nvidia/nemotron-3.5-super-vl:free` | `sk-or-v1-…` |
 | **OpenAI** | `api.openai.com/v1` | `gpt-5.1` | paid |
 | **AmitAI Bridge** | `127.0.0.1:8130/v1` | `opencode-free/deepseek-v4.1-flash-free` | local token |
+| **Local (on-device)** | `127.0.0.1:8080/v1` | `Qwen2.5-Coder-1.5B` | none — runs on the phone |
+
+### The on-device model (4.1+)
+
+`llama-server` from Termux serves one GGUF on loopback; AmitAI talks to it over
+the same OpenAI wire format as every other provider, so nothing else changed.
+
+```
+AmitAI ──HTTP──> 127.0.0.1:8080/v1 ──> llama-server (Termux) ──> GGUF on disk
+```
+
+Setup on the phone (one time):
+
+```bash
+pkg install llama-cpp
+mkdir -p ~/models && cd ~/models
+aria2c -x16 -s16 -c -o Qwen2.5-Coder-1.5B-Q4_K_M.gguf \
+  "https://huggingface.co/bartowski/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/Qwen2.5-Coder-1.5B-Instruct-Q4_K_M.gguf"
+```
+
+`~/models/run.sh`:
+
+```sh
+#!/data/data/com.termux/files/usr/bin/sh
+export LLAMA_ARG_HOST=127.0.0.1
+export LLAMA_ARG_PORT=8080
+export LLAMA_ARG_CTX_SIZE=4096
+export LLAMA_ARG_THREADS=4
+exec llama-server -m "$HOME/models/Qwen2.5-Coder-1.5B-Q4_K_M.gguf" --jinja
+```
+
+Measured on the iQOO I2305 (8 cores, no GPU offload): **6.7 tok/s** generation,
+15.2 tok/s prompt, 8.6 s for a 40-token answer. `--jinja` is what makes the tool
+calls work; without it the 13 on-device tools stay silent.
+
+Caveats worth knowing:
+
+- Android allows cleartext HTTP to `127.0.0.1` only because
+  `network_security_config.xml` lists it — that is why no manifest flag is needed.
+- Thinking models (Qwen3 `0.6B`/`1.7B`) stream their output as `reasoning_content`,
+  which this client does not read — replies look empty. Use a non-thinking model
+  like **Qwen2.5-Coder** for the local provider.
+- A 1.5B model is fine for snippets and chat, not for debugging real bugs. The
+  tool loop also degrades badly below ~3B.
 
 ### The free-model shortlist
 
