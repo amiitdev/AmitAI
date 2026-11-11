@@ -31,11 +31,12 @@ memory, chat search, weather and clock — with **no telemetry, no account, no m
 
 ## ⬇ Download
 
-The newest build is **4.1** (`versionCode 14`). Every APK ever shipped is on the
+The newest build is **4.2** (`versionCode 20`). Every APK ever shipped is on the
 [**Releases page**](https://github.com/amiitdev/AmitAI/releases).
 
 | Version | What changed | Size | Link |
 |---|---|---|---|
+| **4.2** | **Puter.js as a 6th provider** — no API key, no credit card, its own free allowance (sign in once in Chrome, paste one token). Plus a **new app icon and splash**, rebuilt as vectors (adaptive icon + Android 13 themed monochrome layer + Android 12 system splash), and a **reply timing footer** (`12 s · 48 tok/s · 512 tok`) that refuses to invent a speed when a provider buffers the whole answer | 223 MB | [AmitAI-4.2.apk](https://github.com/amiitdev/AmitAI/releases/download/v4.2/AmitAI-4.2.apk) |
 | **4.1** | **On-device local model** — a 5th provider for `llama-server` running in Termux on the phone itself (`127.0.0.1:8080/v1`), no key, no network, works offline next to the cloud providers | 223 MB | [AmitAI-4.1.apk](https://github.com/amiitdev/AmitAI/releases/download/v4.1/AmitAI-4.1.apk) |
 | **4.0** | **Offline neural voices** — Piper + KittenTTS run inside the app via sherpa-onnx (no key, no quota), audio-synced transcript with karaoke highlight, Jarvis-style voice HUD, STT survives `ERROR_CLIENT`, 87 tests | 223 MB | [AmitAI-4.0.apk](https://github.com/amiitdev/AmitAI/releases/download/v4.0/AmitAI-4.0.apk) |
 | 3.9 | **opencode MCP server** — the CLI agent on your phone can call AmitAI's memory, chat search, weather and clock; foreground service keeps it alive in the background | 101 MB | [AmitAI-3.9.apk](https://github.com/amiitdev/AmitAI/releases/download/v3.9/AmitAI-3.9.apk) |
@@ -54,13 +55,15 @@ The newest build is **4.1** (`versionCode 14`). Every APK ever shipped is on the
 1. Download the APK on the phone.
 2. Tap it → Android asks to allow installs from this app → **Allow**.
 3. Open **AmitAI** → ☰ → **Settings**.
-4. Pick a provider (Gemini / OpenRouter / OpenAI / local bridge / on-device) **or** paste any
+4. Pick a provider (Gemini / OpenRouter / OpenAI / **Puter** / local bridge / on-device) **or** paste any
    OpenAI-compatible base URL.
 5. Paste the key → **Test connection** → it lists the models that endpoint serves.
 6. Back → type.
 
-No key? Point the Base URL at a local **Ollama** (`http://<laptop-ip>:11434/v1`)
-or the phone-local **AmitAI Bridge** (`http://127.0.0.1:8130/v1`).
+No key at all? **Puter** needs no key and no card — sign in once and paste the
+token (§13). Or point the Base URL at a local **Ollama**
+(`http://<laptop-ip>:11434/v1`) or the phone-local **AmitAI Bridge**
+(`http://127.0.0.1:8130/v1`).
 
 Want it fully offline? Run `llama-server` in Termux on the phone and pick the
 **Local (on-device)** provider (`http://127.0.0.1:8080/v1`) — no key, no network,
@@ -155,6 +158,7 @@ clock, clipboard, memory, scheduler) runs locally.
 | Full-text search | searches every message, not just titles |
 | Copy / share | per-message copy, code-block copy, Android share sheet |
 | Token + cost readout | per reply, from the model and a local price table |
+| Reply timing footer (4.2) | `12 s · first 1.4 s · 48 tok/s · 512 tok` — wait, time-to-first-token and speed; it shows no speed at all when a provider buffers the whole answer and delivers it in one burst, because there is no generation window to divide by |
 | Error surfacing | 401 / 402 / 429 / network errors explained in plain words |
 
 ### 🎨 Rendering
@@ -1018,10 +1022,12 @@ app backgrounded → http_code=000 after 15 s (socket open, nobody reading)
 AmitAI/
 ├── App.tsx                         root: state, streaming, drawer, header
 ├── index.js                        registers <App/>
-├── assets/                         icon + splash art
+├── assets/                         generated mark (see design/build-assets.py)
 ├── releases/                       APK index + checksums (binaries live on Releases)
-├── __tests__/                      12 suites, 87 tests
+├── __tests__/                      15 suites, 114 tests
 ├── scripts/fetch-tts.sh            sherpa libs + Piper/Kitten models (~150 MB)
+├── design/                         icon geometry: build-assets.py (every output),
+│                                   candidates.py (the rejected directions)
 └── src/
     ├── types.ts                    Message, Conversation, Settings, providers,
     │                               PRESETS, PRICES, KITTEN_VOICES
@@ -1046,6 +1052,7 @@ AmitAI/
     │   ├── barge.ts                echo guard + stop words
     │   ├── quota.ts                per-model daily counters, 429 learning
     │   ├── usage.ts                weekly requests/tokens/cost
+│   ├── measure.ts              durations, tok/s, the reply footer line
     │   └── useKeyboard.ts          edge-to-edge IME inset handling
     ├── components/
     │   ├── Bubble.tsx              user bubble (with images) vs markdown + actions
@@ -1060,7 +1067,8 @@ AmitAI/
     │   ├── WebReader.tsx           hidden WebView for open_page
     │   ├── AssistantSection.tsx    wake word, bubble, listening policy
     │   ├── StorageSection.tsx      folder, free space, all-files grant
-    │   └── SplashScreen.tsx        animated splash
+    │   ├── PuterSignIn.tsx         Puter auth sheet (WebView + token intercept)
+    │   └── SplashScreen.tsx        launch screen: the mark drawn as SVG
     └── screens/
         ├── SettingsScreen.tsx      ~850 lines, every switch documented below
         ├── SchedulesScreen.tsx     jobs, next run, pause, delete, last answer
@@ -1169,6 +1177,52 @@ ollama pull qwen2.5:7b
 
 Free, offline, private — slower and weaker than hosted models, but nothing leaves
 the LAN.
+
+### App icon, splash and the brand mark (4.2+)
+
+The icon, the splash and the Play Store listing are **one geometry**, generated
+from a single script. Nothing is hand-exported, so they cannot drift apart:
+
+```bash
+python3 design/build-assets.py       # writes every icon + splash vector
+python3 design/candidates.py         # re-renders the three rejected directions
+cd android && ./gradlew assembleRelease
+```
+
+| Output | What it is |
+|---|---|
+| `res/mipmap-anydpi-v26/ic_launcher{,_round}.xml` | **adaptive icon** — background + foreground + monochrome |
+| `res/drawable/ic_launcher_foreground.xml` | the mark as a vector, art kept inside the 66 dp safe zone |
+| `res/drawable/ic_launcher_background.xml` | near-black tile with a soft indigo bloom |
+| `res/drawable/ic_launcher_monochrome.xml` | **Android 13 themed icons** — the system tints this one |
+| `res/drawable/splash_icon.xml` | the mark Android 12+ draws in its own splash window |
+| `res/mipmap-{m,h,x,xx,xxx}dpi/ic_launcher{,_round}.png` | legacy launchers, 48 → 192 px |
+| `assets/icon.png` | transparent mark, for the JS splash |
+| `design/store-icon-512.png` | 512×512 Play Store listing icon |
+
+Three details that are easy to get wrong:
+
+1. **Safe zone.** An adaptive foreground is cropped by the launcher's mask. The
+   script maps the outermost ink to 33 dp of a 108 dp canvas
+   (`SCALE = 33 / extent`), so the orbits never clip on a circular mask.
+   The *legacy* PNG is scaled up 1.16 instead — that icon is never masked, so it
+   should fill its tile.
+2. **Monochrome layer.** Without it the icon disappears from "themed icons" mode
+   on Android 13+ (it falls back to a plain square), which is what makes a
+   side-loaded app look foreign next to system apps.
+3. **Launch continuity.** `values/styles.xml` sets `android:windowBackground` and
+   `values-v31/styles.xml` sets `windowSplashScreenBackground` /
+   `windowSplashScreenAnimatedIcon` to the same `#05060f` and the same mark,
+   and `src/components/SplashScreen.tsx` paints that identical colour while it
+   draws the mark with `react-native-svg`. Native window → JS splash → app, with
+   no white flash and no logo change in between.
+
+To change the mark, edit the geometry at the top of `design/build-assets.py`
+(`RX`, `RY`, `TILT`, `CORE_R`, and the gradient stops) and re-run it. The JS
+splash mirrors those numbers in `SplashScreen.tsx`.
+
+> `assets/splash.jpg` and `assets/icon.jpg` are from the pre-4.2 splash and are no
+> longer referenced by any code — the screen is pure vector now.
 
 ---
 
@@ -1296,6 +1350,7 @@ $ ls -lh AmitAI-3.9.apk
 | **Gemini** | `generativelanguage.googleapis.com/v1beta/openai` | `gemini-3.5-flash` | AI Studio, free tier |
 | **OpenRouter** | `openrouter.ai/api/v1` | `nvidia/nemotron-3.5-super-vl:free` | `sk-or-v1-…` |
 | **OpenAI** | `api.openai.com/v1` | `gpt-5.1` | paid |
+| **Puter** | `api.puter.com/drivers/call` | `openai/gpt-6-luna` | Puter token — **no key, no card** |
 | **AmitAI Bridge** | `127.0.0.1:8130/v1` | `opencode-free/deepseek-v4.1-flash-free` | local token |
 | **Local (on-device)** | `127.0.0.1:8080/v1` | `Qwen2.5-Coder-1.5B` | none — runs on the phone |
 
@@ -1341,6 +1396,63 @@ Caveats worth knowing:
   like **Qwen2.5-Coder** for the local provider.
 - A 1.5B model is fine for snippets and chat, not for debugging real bugs. The
   tool loop also degrades badly below ~3B.
+
+### Puter — the provider with no key and no card (4.2+)
+
+**In plain words.** Every other provider here needs an API key, and a key means
+a card. Puter is different: you make a *Puter account*, and that account — not
+the app, not the developer — pays the model provider. So there is no key to buy,
+no "top up credits" screen, and no card. What it is **not** is infinite: the free
+account has a limited AI allowance.
+
+```
+AmitAI ──token──> api.puter.com/drivers/call ──> OpenAI / Anthropic / …
+                        (Puter's account pays)
+```
+
+**Set it up once — 6 steps**
+
+1. Open **`puter.com` in Chrome** and sign in (or sign up). Use Chrome, not the
+   in-app browser: Google refuses OAuth inside an embedded WebView, so
+   "Sign in with Google" tapped inside the app looks like it does nothing.
+2. Get the token: `puter.com` → **Settings** → **Developers** → **Create API
+   Token** → copy the long `eyJ…` string.
+   *(Shortcut: ☰ → Settings → provider **Puter** → **Sign in to Puter**. The sheet
+   opens `puter.com` itself and catches Puter's `?token=` redirect, so you never
+   copy anything — as long as the sign-in provider allows WebViews.)*
+3. In AmitAI: ☰ → **Settings** → Provider → **Puter**. The base URL
+   (`https://api.puter.com/drivers`) fills itself.
+4. Paste the token into the key field.
+5. Tap **Test connection** → it lists the models Puter serves. The picker's
+   shortlist is `gpt-6-luna` (cheapest), `gpt-5.4-nano` (fast), `gpt-6.1-sol`
+   (everyday coding), `gpt-6-astra` (flagship), `openai/gpt-oss-120b`
+   (open weights) and `openai/gpt-5.3-codex`.
+6. Pick a model → back → type.
+
+**What "free" actually means**
+
+| Puter plan | Price | AI allowance |
+|---|---|---|
+| Free | $0 | **limited** AI + cloud, 25 MB storage |
+| Basic | $10/mo | expanded AI |
+| Plus | $25/mo | advanced AI |
+| Pro | $100/mo | maximum AI |
+
+Puter publishes no exact numbers (calls/day, tokens/month), so "how much is left"
+is unknown until it stops answering. Treat it as a *second lifeline* for when
+Gemini's 20-requests-per-day quota dies at midnight — not as a daily driver. A
+tool round costs several calls, so heavy use burns the allowance several times
+faster than one call per answer.
+
+**Why it needed its own file.** Puter is not OpenAI-shaped: it takes a
+`{interface, driver, method, args}` envelope and answers with newline-delimited
+JSON, not SSE. `src/api/puter.ts` does that translation in one place, and
+`runAgent` picks it out by endpoint (`isPuterEndpoint`). Its stream also carries
+a `usage` chunk, which is why Puter answers show **exact** token counts rather
+than the `~` estimate.
+
+**When it stops working.** The token is a session token — it expires. On
+`401`/`403`, sign in again and paste a fresh one; nothing else changes.
 
 ### The free-model shortlist
 
@@ -1434,6 +1546,9 @@ the foreground, and only when you ask a question that needs it).
 
 | Version | Code | Size | Highlights |
 |---|---|---|---|
+| 4.2 | 20 | 223 MB | **Puter as a 6th provider** (no key, no card, own free allowance) · **vector app icon + splash** (adaptive, Android 13 monochrome, Android 12 system splash) · reply timing footer that never invents a speed |
+| 4.1 | 14 | 223 MB | **on-device local model** — `llama-server` in Termux, no key, no network |
+| 4.0 | 13 | 223 MB | **offline neural voices** — Piper + KittenTTS via sherpa-onnx, audio-synced transcript, voice HUD |
 | 3.9 | 12 | 101 MB | **opencode MCP server**: the CLI agent on the phone can call AmitAI's memory, chat search, weather and clock; foreground service keeps it answering in the background |
 | 3.8 | 11 | 101 MB | memory + past-chat recall that works on tool-less providers |
 | 3.7 | 10 | 101 MB | share into AmitAI, clipboard + memory tools, 8-image vision, scheduled jobs |

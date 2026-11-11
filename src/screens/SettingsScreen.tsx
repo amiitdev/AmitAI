@@ -10,11 +10,13 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import Ionicons from '@react-native-vector-icons/ionicons';
-import { Settings, PRESETS, DEFAULT_SETTINGS, KITTEN_VOICES, PROVIDERS, OPENROUTER_FREE, ProviderDef } from '../types';
+import { Settings, PRESETS, DEFAULT_SETTINGS, KITTEN_VOICES, PROVIDERS, OPENROUTER_FREE, ProviderDef, PUTER_MODELS, puterNoteFor } from '../types';
 import { getWeeklyUsage, resetUsage } from '../lib/usage';
 import { useTheme, THEMES, ThemeKey, ThemeColors, radius, space, mono } from '../theme';
 import { ping } from '../api/openai';
-import { hasSTT, hasTTS, hasPicker, openTtsSettings, ttsStatus, mcpInfo, setMcpService, copyText, McpInfo } from '../lib/native';
+import { isPuterEndpoint } from '../api/puter';
+import { PuterSignIn } from '../components/PuterSignIn';
+import { hasSTT, hasTTS, hasPicker, openTtsSettings, ttsStatus, mcpInfo, setMcpService, copyText, readClipboard, McpInfo } from '../lib/native';
 import { useKeyboardHeight } from '../lib/useKeyboard';
 import { speakAloud, stopAllSpeech } from '../lib/speech';
 import { resetQuota } from '../lib/quota';
@@ -23,6 +25,7 @@ import { StorageSection } from '../components/StorageSection';
 
 /** Model chips offered per endpoint — only models that were verified there. */
 const MODELS_FOR = (url: string): string[] => {
+  if (isPuterEndpoint(url)) return PUTER_MODELS.map(m => m.model);
   if (url.includes('openrouter')) return OPENROUTER_FREE.map(m => m.model);
   if (url.includes('generativelanguage')) {
     return [
@@ -60,6 +63,7 @@ export function SettingsScreen({ settings, onChange, onBack, onClearChats }: Pro
   const [models, setModels] = useState<string[] | null>(null);
   const [usage, setUsage] = useState<Awaited<ReturnType<typeof getWeeklyUsage>> | null>(null);
   const [mcp, setMcp] = useState<McpInfo | null>(null);
+  const [puterOpen, setPuterOpen] = useState(false);
   const keyboard = useKeyboardHeight();
 
   useEffect(() => {
@@ -92,6 +96,32 @@ export function SettingsScreen({ settings, onChange, onBack, onClearChats }: Pro
     } finally {
       setTesting(false);
     }
+  };
+
+  /**
+   * Puter tokens are minted in a browser (Google sign-in refuses to run inside
+   * an embedded WebView), so the clipboard is the realistic way in: copy the
+   * token in Chrome, come back, tap once.
+   *
+   * Accepts a bare token or a whole `...?token=...` URL, which is what you end
+   * up with if you copy the address bar instead of the token itself.
+   */
+  const pastePuterToken = async () => {
+    const raw = (await readClipboard()).trim();
+    if (!raw) {
+      Alert.alert(
+        'Clipboard is empty',
+        'Copy the token from puter.com → Settings → Developers → Create API Token, then tap again.',
+      );
+      return;
+    }
+    const fromUrl = raw.match(/[?&]token=([^&#\s]+)/);
+    const token = fromUrl ? decodeURIComponent(fromUrl[1]) : raw;
+    onChange({
+      apiKey: token,
+      providerKeys: { ...settings.providerKeys, [currentName]: token },
+    });
+    Alert.alert('Token saved', 'Tap “Test connection” to confirm it works.');
   };
 
   const handleThemeSelect = (key: ThemeKey) => {
@@ -204,7 +234,7 @@ export function SettingsScreen({ settings, onChange, onBack, onClearChats }: Pro
           onChangeText={t =>
             onChange({ apiKey: t, providerKeys: { ...settings.providerKeys, [currentName]: t } })
           }
-          placeholder="sk-..."
+          placeholder={isPuterEndpoint(settings.baseUrl) ? 'Puter auth token' : 'sk-...'}
           placeholderTextColor={colors.textFaint}
           secureTextEntry
           autoCapitalize="none"
@@ -215,6 +245,22 @@ export function SettingsScreen({ settings, onChange, onBack, onClearChats }: Pro
             'Stored on this device only. Never leaves it except in the request header.'}
         </Text>
       </View>
+
+      {isPuterEndpoint(settings.baseUrl) && (
+        <>
+          <TouchableOpacity style={styles.signerBtn} onPress={() => setPuterOpen(true)}>
+            <Ionicons name={'log-in-outline'} size={16} color="#fff" />
+            <Text style={styles.signerText}>
+              {settings.apiKey ? 'Sign in again' : 'Sign in to Puter'}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.pasteBtn} onPress={pastePuterToken}>
+            <Ionicons name="clipboard-outline" size={15} color={colors.textDim} />
+            <Text style={styles.pasteText}>Paste token from clipboard</Text>
+          </TouchableOpacity>
+        </>
+      )}
 
       <TouchableOpacity style={styles.testBtn} onPress={test} disabled={testing}>
         {testing ? (
@@ -255,6 +301,9 @@ export function SettingsScreen({ settings, onChange, onBack, onClearChats }: Pro
       </View>
       {!!OR_HINTS[settings.model] && (
         <Text style={styles.hint}>{OR_HINTS[settings.model]}</Text>
+      )}
+      {!!puterNoteFor(settings.model) && (
+        <Text style={styles.hint}>{puterNoteFor(settings.model)}</Text>
       )}
 
       <Text style={styles.section}>Generation</Text>
@@ -779,6 +828,17 @@ export function SettingsScreen({ settings, onChange, onBack, onClearChats }: Pro
       </TouchableOpacity>
 
       <View style={{ height: space(12) }} />
+
+      <PuterSignIn
+        visible={puterOpen}
+        onClose={() => setPuterOpen(false)}
+        onToken={token =>
+          onChange({
+            apiKey: token,
+            providerKeys: { ...settings.providerKeys, [currentName]: token },
+          })
+        }
+      />
     </ScrollView>
   );
 }
@@ -909,6 +969,32 @@ const createStyles = (colors: ThemeColors) =>
       alignItems: 'center',
     },
     testText: { color: '#fff', fontWeight: '600', fontSize: 14 },
+    signerBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: space(2),
+      marginTop: -space(1),
+      marginBottom: space(4),
+      backgroundColor: colors.accent,
+      borderRadius: radius.md,
+      paddingVertical: space(3),
+    },
+    signerText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+    pasteBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: space(2),
+      marginTop: -space(2),
+      marginBottom: space(4),
+      paddingVertical: space(3),
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.bgRaised,
+    },
+    pasteText: { color: colors.textDim, fontSize: 13, fontWeight: '600' },
     ttsFix: {
       flexDirection: 'row',
       alignItems: 'center',

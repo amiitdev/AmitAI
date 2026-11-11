@@ -1,6 +1,8 @@
 import { Message } from '../types';
 import { Source } from './tools';
 import { recordSent, recordBlocked } from '../lib/quota';
+import { approxTokens } from '../lib/measure';
+import { isPuterEndpoint, puterChat, puterModels, PuterWireMsg } from './puter';
 
 export interface ChatRequest {
   baseUrl: string;
@@ -104,6 +106,30 @@ export function toWire(messages: Message[], systemPrompt: string): WireMsg[] {
 interface StreamResult {
   text: string;
   toolCalls: ToolCall[];
+  timings: StreamTimings;
+}
+
+/** What one HTTP call cost, in wall-clock ms and output tokens. */
+export interface StreamTimings {
+  /** time until the first visible character of the answer, 0 if none came */
+  ttftMs: number;
+  totalMs: number;
+  /** output tokens from the provider's usage report, 0 when it sent none */
+  tokensOut: number;
+  exact: boolean;
+}
+
+/** Aggregate for the whole agent loop (every tool round included). */
+export interface RunStats {
+  /** when the first character appeared, measured from the send */
+  ttftMs: number;
+  /** the whole exchange, tools included */
+  totalMs: number;
+  tokensOut: number;
+  /** true when `tokensOut` is the provider's number, not chars/4 */
+  exact: boolean;
+  /** output tokens per second, over generation time only */
+  tps: number;
 }
 
 /**
@@ -129,6 +155,54 @@ function streamOnce(
   onDelta: (t: string) => void,
   registerAbort: (fn: () => void) => void,
 ): Promise<StreamResult> {
+  const startedAt = Date.now();
+  let firstTokenAt = 0;
+  let usageTokens = 0;
+
+  /** Every visible character passes through here, so the first one is timed. */
+  const emit = (t: string) => {
+    if (!t) return;
+    if (!firstTokenAt) firstTokenAt = Date.now();
+    onDelta(t);
+  };
+
+  /** Attach the measured numbers to whatever the call produced. */
+  const measured = (r: {
+    text: string;
+    toolCalls: ToolCall[];
+    tokensOut?: number;
+    exact?: boolean;
+  }): StreamResult => ({
+    text: r.text,
+    toolCalls: r.toolCalls,
+    timings: {
+      ttftMs: firstTokenAt ? firstTokenAt - startedAt : 0,
+      totalMs: Date.now() - startedAt,
+      tokensOut: r.tokensOut ?? usageTokens,
+      exact: r.exact ?? usageTokens > 0,
+    },
+  });
+
+  // Puter speaks its own driver API; everything else speaks the OpenAI wire.
+  if (isPuterEndpoint(opts.baseUrl)) {
+    return puterChat(
+      {
+        token: opts.apiKey,
+        model: opts.model,
+        wire: opts.wire as PuterWireMsg[],
+        temperature: opts.temperature,
+        maxTokens: opts.maxTokens,
+        stream: opts.stream,
+        reasoningEffort: opts.reasoningEffort as any,
+        tools: opts.tools as any,
+        simulate429: opts.simulate429,
+        vision: opts.wire.some(m => Array.isArray(m.content)),
+      },
+      emit,
+      registerAbort,
+    ).then(measured);
+  }
+
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     let seen = 0;
@@ -181,7 +255,7 @@ function streamOnce(
     xhr.setRequestHeader('Content-Type', 'application/json');
     if (opts.apiKey) xhr.setRequestHeader('Authorization', `Bearer ${opts.apiKey}`);
     xhr.setRequestHeader('Accept', opts.stream ? 'text/event-stream' : 'application/json');
-    xhr.timeout = FIRST_TOKEN_MS;
+    xhr.timeout = isLocalEndpoint(opts.baseUrl) ? LOCAL_MS : FIRST_TOKEN_MS;
     registerAbort(() => xhr.abort());
 
     const mergeToolDelta = (tc: any) => {
@@ -199,7 +273,7 @@ function streamOnce(
     };
 
     const parseEvent = (payload: string) => {
-      if (payload === '[DONE]') return done({ text, toolCalls: calls.filter(Boolean) });
+      if (payload === '[DONE]') return done(measured({ text, toolCalls: calls.filter(Boolean) }));
       let json: any;
       try {
         json = JSON.parse(payload);
@@ -208,18 +282,25 @@ function streamOnce(
       }
       if (json.error) return fail(new ApiError(json.error.message || 'API error'));
 
+      // Some gateways report exact usage on the final chunk.
+      const u = json.usage;
+      if (u) {
+        const n = u.completion_tokens ?? u.output_tokens ?? 0;
+        if (typeof n === 'number' && n > 0) usageTokens = Math.round(n);
+      }
+
       const choice = json.choices?.[0];
       if (!choice) return;
 
       const delta = choice.delta ?? choice.message ?? {};
       if (typeof delta.content === 'string' && delta.content) {
         text += delta.content;
-        onDelta(delta.content);
+        emit(delta.content);
       }
       if (Array.isArray(delta.tool_calls)) delta.tool_calls.forEach(mergeToolDelta);
 
       if (choice.finish_reason) {
-        done({ text, toolCalls: calls.filter(c => c && c.function.name) });
+        done(measured({ text, toolCalls: calls.filter(c => c && c.function.name) }));
       }
     };
 
@@ -256,7 +337,7 @@ function streamOnce(
       if (opts.stream) {
         drain();
         if (carry.trim().startsWith('data:')) parseEvent(carry.trim().slice(5).trim());
-        return done({ text, toolCalls: calls.filter(c => c && c.function.name) });
+        return done(measured({ text, toolCalls: calls.filter(c => c && c.function.name) }));
       }
 
       try {
@@ -264,17 +345,26 @@ function streamOnce(
         const msg = j.choices?.[0]?.message ?? {};
         if (typeof msg.content === 'string' && msg.content) {
           text = msg.content;
-          onDelta(text);
+          emit(text);
         }
         (msg.tool_calls ?? []).forEach(mergeToolDelta);
-        done({ text, toolCalls: calls.filter(c => c && c.function.name) });
+        const n = j.usage?.completion_tokens ?? j.usage?.output_tokens ?? 0;
+        if (typeof n === 'number' && n > 0) usageTokens = Math.round(n);
+        done(measured({ text, toolCalls: calls.filter(c => c && c.function.name) }));
       } catch (e: any) {
         fail(new ApiError('Could not parse response: ' + e.message));
       }
     };
 
     xhr.onerror = () => fail(new ApiError('Network error — check the base URL and connection.'));
-    xhr.ontimeout = () => fail(new ApiError('Request timed out after 3 minutes.'));
+    xhr.ontimeout = () =>
+      fail(
+        new ApiError(
+          isLocalEndpoint(opts.baseUrl)
+            ? 'Local model timed out — it is probably swapping. Close other apps and retry.'
+            : 'Request timed out after 3 minutes.',
+        ),
+      );
     xhr.onabort = () => fail(new ApiError('Stopped', -1));
 
     xhr.send(JSON.stringify(body));
@@ -294,6 +384,8 @@ export interface AgentHandlers {
   onToolStart?: (name: string, args: any) => void;
   onToolDone?: (name: string, ok: boolean, summary: string) => void;
   onSources?: (sources: Source[]) => void;
+  /** how long the answer took and how fast it came; fires just before onDone */
+  onStats?: (stats: RunStats) => void;
   /** fires once with the final answer text */
   onDone?: (text: string) => void;
   onError?: (err: Error) => void;
@@ -325,6 +417,34 @@ export function runAgent(opts: AgentOptions, handlers: AgentHandlers): RunHandle
     const sources: Source[] = [];
     const maxRounds = opts.maxRounds ?? 3;
 
+    // Timing is measured for the whole exchange, so a model that spends 20 s in
+    // three tool rounds shows 20 s — that is the wait the user actually feels.
+    const runStartedAt = Date.now();
+    let firstTokenAt = 0;
+    let tokensOut = 0;
+    let exact = false;
+
+    const statsFor = (text: string): RunStats => {
+      const totalMs = Date.now() - runStartedAt;
+      const ttftMs = firstTokenAt ? firstTokenAt - runStartedAt : 0;
+      const tokens = exact && tokensOut ? tokensOut : approxTokens(text);
+      // Generation time is the honest denominator — but only when there was a
+      // generation window at all. A provider that buffers and delivers the
+      // whole answer in one burst at the end (Puter does this on some upstreams)
+      // leaves ~1 ms between first and last token, and dividing by it printed
+      // "450000 tok/s". Below a quarter second there is no measurable window,
+      // so no speed is claimed.
+      const generationMs = totalMs - ttftMs;
+      const measurable = generationMs >= 250;
+      return {
+        ttftMs,
+        totalMs,
+        tokensOut: tokens,
+        exact: exact && !!tokensOut,
+        tps: measurable && tokens > 0 ? tokens / (generationMs / 1000) : 0,
+      };
+    };
+
     for (let round = 0; round < maxRounds; round++) {
       const result = await streamOnce(
         {
@@ -339,16 +459,25 @@ export function runAgent(opts: AgentOptions, handlers: AgentHandlers): RunHandle
           simulate429: opts.simulate429,
           tools: opts.tools,
         },
-        handlers.onDelta,
+        t => {
+          if (!firstTokenAt) firstTokenAt = Date.now();
+          handlers.onDelta(t);
+        },
         fn => {
           abortCurrent = fn;
         },
       );
 
+      if (result.timings.tokensOut > 0) {
+        tokensOut = result.timings.tokensOut;
+        exact = result.timings.exact;
+      }
+
       if (aborted) return;
 
       if (!result.toolCalls.length || !opts.execute) {
         handlers.onSources?.(sources);
+        handlers.onStats?.(statsFor(result.text));
         handlers.onDone?.(result.text);
         return; // final answer
       }
@@ -392,6 +521,7 @@ export function runAgent(opts: AgentOptions, handlers: AgentHandlers): RunHandle
 
     // ran out of rounds without a plain answer: return what we have
     handlers.onSources?.(sources);
+    handlers.onStats?.(statsFor(''));
     handlers.onDone?.('');
   })().catch(err => {
     if (aborted || err?.status === -1) return;
@@ -405,6 +535,10 @@ export function runAgent(opts: AgentOptions, handlers: AgentHandlers): RunHandle
 
 /** Cheap connectivity + auth check for the settings screen. */
 export async function ping(baseUrl: string, apiKey: string): Promise<string[]> {
+  // Puter publishes its catalogue unauthenticated, so this works before the
+  // token is pasted — which is exactly when you want to know the URL is right.
+  if (isPuterEndpoint(baseUrl)) return puterModels();
+
   const res = await fetch(`${trimBase(baseUrl)}/models`, {
     headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined,
   });
@@ -433,3 +567,14 @@ export function fileToDataUrl(uri: string): Promise<string> {
 
 // Real OpenAI reasoning models delay the first token (chain-of-thought); without a timeout the UI spins.
 const FIRST_TOKEN_MS = 240_000;
+
+/**
+ * A GGUF on loopback cannot do OpenAI-style `tool_calls`: a 1–2B model writes the
+ * call as plain text (`{"name":"get_time","arguments":{}}`), which the client then
+ * shows as the answer. For those endpoints we send no tools at all.
+ */
+export const isLocalEndpoint = (baseUrl: string) =>
+  /(^|\/\/)(127\.0\.0\.1|localhost|\[::1\]):8080(\/|$)/.test(baseUrl);
+
+/** On-device generation runs at ~4-7 tok/s, so a 2048-token answer needs minutes. */
+const LOCAL_MS = 900_000;

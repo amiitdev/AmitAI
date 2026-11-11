@@ -85,3 +85,9 @@ releases/*.apk
 .tts-build/
 android/app/src/main/jniLibs/
 android/app/src/main/assets/tts/
+
+# Icon design previews — regenerate with design/candidates.py
+design/icon-candidates.png
+design/*-squircle.png
+design/*-circle.png
+design/*-full.png

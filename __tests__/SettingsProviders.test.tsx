@@ -9,10 +9,10 @@
 
 import React from 'react';
 import ReactTestRenderer from 'react-test-renderer';
-import { TouchableOpacity, TextInput } from 'react-native';
+import { TouchableOpacity, Text, TextInput } from 'react-native';
 
 import { SettingsScreen } from '../src/screens/SettingsScreen';
-import { Settings, DEFAULT_SETTINGS, PROVIDERS, OPENROUTER_FREE } from '../src/types';
+import { Settings, DEFAULT_SETTINGS, PROVIDERS, OPENROUTER_FREE, PUTER_MODELS } from '../src/types';
 
 // Nothing here touches the network or the Kotlin bridge.
 jest.mock('../src/api/openai', () => ({ ping: jest.fn(async () => []) }));
@@ -171,6 +171,41 @@ describe('Settings · provider switching', () => {
 
     await press(tree.root, 'Gemini');
     expect(latest.model).toBe('gemini-3.5-flash');
+
+    await ReactTestRenderer.act(async () => tree.unmount());
+  });
+
+  test('Puter is a five-second switch: url, default model, chips and a sign-in button', async () => {
+    let tree!: ReactTestRenderer.ReactTestRenderer;
+    await ReactTestRenderer.act(async () => {
+      tree = ReactTestRenderer.create(<Harness initial={START} />);
+    });
+
+    await press(tree.root, 'Puter (free)');
+    expect(latest.baseUrl).toBe('https://api.puter.com/drivers');
+    expect(latest.model).toBe('gpt-6-luna');
+    // nothing was stored for Puter yet — and the OpenAI key is still filed away
+    expect(latest.apiKey).toBe('');
+    expect(latest.providerKeys.OpenAI).toBe('sk-openai-key');
+
+    // every documented Puter model is one tap away
+    PUTER_MODELS.forEach(m => {
+      expect(() => chip(tree.root, m.model)).not.toThrow();
+    });
+    await press(tree.root, 'gpt-6.1-sol');
+    expect(latest.model).toBe('gpt-6.1-sol');
+
+    // the token field stops pretending to want an sk- key
+    const field = tree.root
+      .findAllByType(TextInput)
+      .find(n => n.props.placeholder === 'Puter auth token');
+    expect(field).toBeTruthy();
+
+    // and a sign-in button exists, because there is nothing to paste otherwise
+    const signIn = tree.root
+      .findAllByType(Text)
+      .find(n => JSON.stringify(n.props.children ?? '').includes('Sign in to Puter'));
+    expect(signIn).toBeTruthy();
 
     await ReactTestRenderer.act(async () => tree.unmount());
   });

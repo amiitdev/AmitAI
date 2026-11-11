@@ -66,3 +66,35 @@ jest.mock('@react-native-vector-icons/ionicons', function () {
   var React = require('react');
   return { __esModule: true, default: function () { return null; } };
 });
+
+// react-native-svg needs a native surface. The splash mark and the voice HUD
+// are decorative, so under Jest they render their container and nothing else.
+jest.mock('react-native-svg', function () {
+  var React = require('react');
+  var Svg = function (props) {
+    return React.createElement('Svg', props, props.children);
+  };
+  var Leaf = function () {
+    return null;
+  };
+  return {
+    __esModule: true,
+    default: Svg,
+    Svg: Svg,
+    Circle: Leaf,
+    Ellipse: Leaf,
+    Rect: Leaf,
+    Path: Leaf,
+    Line: Leaf,
+    G: Leaf,
+    Defs: Leaf,
+    Text: Leaf,
+    LinearGradient: Leaf,
+    RadialGradient: Leaf,
+    Stop: Leaf,
+    ClipPath: Leaf,
+    Mask: Leaf,
+    Polygon: Leaf,
+    Polyline: Leaf,
+  };
+});

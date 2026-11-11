@@ -36,7 +36,7 @@ import {
   titleFrom,
   trimForStorage,
 } from './src/storage/store';
-import { runAgent, fileToDataUrl, RunHandle, ping } from './src/api/openai';
+import { runAgent, fileToDataUrl, RunHandle, ping, isLocalEndpoint, RunStats } from './src/api/openai';
 import { makeExecutor } from './src/lib/agentTools';
 import { applySchedules, loadSchedules } from './src/lib/schedules';
 import { addNote, formatNotes, loadNotes } from './src/lib/memory';
@@ -348,6 +348,8 @@ function AppInner() {
       sourcesRef.current = [];
 
       let pending = '';
+      // Timings for this reply, filled by onStats just before onDone.
+      let stats: RunStats | null = null;
 
       const flush = () => {
         if (!pending) return;
@@ -367,6 +369,7 @@ function AppInner() {
         clearInterval(timer);
         flush();
         const text = opts.text;
+        const st = stats as RunStats | null;
         updateActive(c => ({
           ...c,
           messages: c.messages.map(m =>
@@ -377,7 +380,11 @@ function AppInner() {
                   streaming: false,
                   error: opts.error,
                   sources: opts.sources?.length ? opts.sources : undefined,
-                  tokens: Math.ceil((text ?? m.content).length / 4),
+                  tokens: st?.tokensOut ?? Math.ceil((text ?? m.content).length / 4),
+                  exactTokens: st?.exact,
+                  latencyMs: st?.totalMs,
+                  ttftMs: st?.ttftMs,
+                  tps: st?.tps,
                 }
               : m,
           ),
@@ -388,6 +395,8 @@ function AppInner() {
       };
 
       const exec = makeExecutor(settings);
+      // A loopback GGUF prints tool calls as plain text, so it gets no tools at all.
+      const local = isLocalEndpoint(settings.baseUrl);
 
       streamRef.current = runAgent(
         {
@@ -403,8 +412,8 @@ function AppInner() {
           stream: settings.stream,
           reasoningEffort: settings.reasoningEffort,
           simulate429: settings.simulate429,
-          tools: exec.tools,
-          maxRounds: settings.webSearch ? 3 : 1,
+          tools: local ? undefined : exec.tools,
+          maxRounds: local ? 1 : settings.webSearch ? 3 : 1,
           execute: exec.execute,
         },
         {
@@ -415,6 +424,9 @@ function AppInner() {
           onToolDone: () => setToolStage(null),
           onSources: srcs => {
             sourcesRef.current = srcs;
+          },
+          onStats: s => {
+            stats = s;
           },
           onDone: text => finalize({ text: text || undefined, sources: sourcesRef.current }),
           onError: err => finalize({ error: err.message }),
@@ -543,7 +555,9 @@ function AppInner() {
 
         let full = '';
         let srcs: Source[] = [];
+        let voiceStats: RunStats | null = null;
         const exec = makeExecutor(settings);
+        const localVoice = isLocalEndpoint(settings.baseUrl);
 
         voiceRunRef.current = runAgent(
           {
@@ -558,8 +572,8 @@ function AppInner() {
             stream: false,
             reasoningEffort: settings.reasoningEffort,
             simulate429: settings.simulate429,
-            tools: exec.tools,
-            maxRounds: settings.webSearch ? 3 : 1,
+            tools: localVoice ? undefined : exec.tools,
+            maxRounds: localVoice ? 1 : settings.webSearch ? 3 : 1,
             execute: exec.execute,
           },
           {
@@ -569,9 +583,13 @@ function AppInner() {
             onSources: s2 => {
               srcs = s2;
             },
+            onStats: s2 => {
+              voiceStats = s2;
+            },
             onDone: t => {
               voiceRunRef.current = null;
               const answer = t || full;
+              const st = voiceStats as RunStats | null;
               updateActive(c => ({
                 ...c,
                 messages: [
@@ -579,7 +597,11 @@ function AppInner() {
                   {
                     ...newMessage('assistant', answer),
                     model: settings.model,
-                    tokens: Math.ceil(answer.length / 4),
+                    tokens: st?.tokensOut ?? Math.ceil(answer.length / 4),
+                    exactTokens: st?.exact,
+                    latencyMs: st?.totalMs,
+                    ttftMs: st?.ttftMs,
+                    tps: st?.tps,
                     sources: srcs.length ? srcs : undefined,
                   },
                 ],

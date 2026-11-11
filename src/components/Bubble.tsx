@@ -16,6 +16,7 @@ import Ionicons from '@react-native-vector-icons/ionicons';
 import { copyText } from '../lib/native';
 import { useSpeech } from '../lib/speech';
 import { useToast } from './Toast';
+import { approxTokens, formatDuration, formatStats, formatTps, tokensPerSecond } from '../lib/measure';
 
 interface Props {
   message: Message;
@@ -85,6 +86,36 @@ export function Bubble({ message, onRegenerate, canRegenerate }: Props) {
 
   const showThinking = empty || firstTokenPending;
 
+  /**
+   * Live clock. While an answer streams there is no way for the user to know
+   * whether a 20 s silence means "still thinking" or "stuck", so the bubble
+   * counts up from the moment the message was created (which is the moment the
+   * request went out).
+   */
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!message.streaming) return;
+    setNow(Date.now());
+    const id = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(id);
+  }, [message.streaming]);
+
+  const liveMs = message.streaming ? Math.max(0, now - message.createdAt) : 0;
+  const liveTokens = message.streaming ? approxTokens(message.content) : 0;
+  const liveTps = liveTokens ? tokensPerSecond(liveTokens, Math.max(1, liveMs)) : 0;
+
+  // Final numbers, stored on the message when the run finished, so history keeps
+  // the real measurement instead of losing it on the next render.
+  const stats = !isUser
+    ? formatStats({
+        latencyMs: message.latencyMs,
+        ttftMs: message.ttftMs,
+        tps: message.tps,
+        tokens: message.tokens,
+        exact: message.exactTokens,
+      })
+    : '';
+
   return (
     <View style={[styles.row, isUser && styles.rowUser]}>
       <View style={[styles.bubble, isUser ? styles.user : styles.assistant]}>
@@ -104,6 +135,7 @@ export function Bubble({ message, onRegenerate, canRegenerate }: Props) {
           <View style={styles.thinking}>
             <ActivityIndicator size="small" color={colors.accent} />
             <Text style={styles.thinkingText}>thinking…</Text>
+            {!!liveMs && <Text style={styles.thinkingTime}>{formatDuration(liveMs)}</Text>}
           </View>
         ) : isUser ? (
           <Text style={styles.userText} selectable>
@@ -111,6 +143,17 @@ export function Bubble({ message, onRegenerate, canRegenerate }: Props) {
           </Text>
         ) : (
           <Markdown source={message.content} caret={!!message.streaming} />
+        )}
+
+        {/* The live meter under a half-written answer. */}
+        {!isUser && !!message.streaming && !!message.content && (
+          <View style={styles.live}>
+            <Ionicons name="speedometer-outline" size={11} color={colors.textFaint} />
+            <Text style={styles.liveText}>
+              {formatDuration(liveMs)}
+              {liveTps > 0 ? ` · ${formatTps(liveTps)}` : ''}
+            </Text>
+          </View>
         )}
 
         {chips.length > 0 && (
@@ -165,7 +208,7 @@ export function Bubble({ message, onRegenerate, canRegenerate }: Props) {
               </TouchableOpacity>
             )}
 
-            {!!message.tokens && <Text style={styles.meta}>{message.tokens} tok</Text>}
+            {!!message.tokens && <Text style={styles.meta}>{stats}</Text>}
           </View>
         )}
       </View>
@@ -205,6 +248,14 @@ const createStyles = (colors: ThemeColors) =>
   },
   thinking: { flexDirection: 'row', alignItems: 'center', gap: space(2) },
   thinkingText: { color: colors.textFaint, fontSize: 14 },
+  thinkingTime: { color: colors.textFaint, fontSize: 12, opacity: 0.8 },
+  live: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space(1.5),
+    marginTop: space(2),
+  },
+  liveText: { color: colors.textFaint, fontSize: 11, fontVariant: ['tabular-nums'] },
   error: { color: colors.danger, fontSize: 13, marginTop: space(2) },
   sources: { flexDirection: 'row', flexWrap: 'wrap', gap: space(2), marginTop: space(3) },
   sourceChip: {
@@ -232,5 +283,5 @@ const createStyles = (colors: ThemeColors) =>
   action: { color: colors.textFaint, fontSize: 12 },
   actionDone: { color: colors.ok },
   actionActive: { color: colors.accent },
-  meta: { ...font.tiny, marginLeft: 'auto' },
+  meta: { ...font.tiny, marginLeft: 'auto', fontVariant: ['tabular-nums'] },
 });

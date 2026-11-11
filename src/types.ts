@@ -15,6 +15,14 @@ export interface Message {
   model?: string;
   /** approximate token count, filled after a reply finishes */
   tokens?: number;
+  /** true when `tokens` is the provider's own usage number, not chars/4 */
+  exactTokens?: boolean;
+  /** wall-clock time the whole reply took, in ms (tools included) */
+  latencyMs?: number;
+  /** time to the first visible character, in ms */
+  ttftMs?: number;
+  /** measured output tokens per second */
+  tps?: number;
   /** local file uri of an attached image (vision models only) */
   imageUri?: string;
   /** base64 data URL built at send time; never persisted */
@@ -177,6 +185,14 @@ export const PROVIDERS: ProviderDef[] = [
     keyHint: 'Paste BRIDGE_TOKEN from Termux · phone-local, free models',
   },
   {
+    // Not an OpenAI endpoint: the base URL is a marker that routes the request
+    // through src/api/puter.ts, which speaks Puter's own driver API.
+    name: 'Puter (free)',
+    url: 'https://api.puter.com/drivers',
+    model: 'gpt-6-luna',
+    keyHint: 'Free puter.com account · tap Sign in below, no OpenAI key or card',
+  },
+  {
     name: 'Local (on-device)',
     url: 'http://127.0.0.1:8080/v1',
     model: 'Qwen2.5-Coder-3B',
@@ -233,6 +249,26 @@ export const OPENROUTER_FREE: ProviderDef[] = [
 
 export const providerByName = (name: string): ProviderDef | undefined =>
   PROVIDERS.find(p => p.name === name);
+
+/**
+ * Puter's documented chat models, in the order worth trying.
+ *
+ * These are the ids from Puter's own tutorials; the catalogue also lists
+ * `provider:model` forms (`openrouter:openai/gpt-6-luna`), and these are the
+ * aliases that resolve to them. Kept short on purpose — the full catalogue is
+ * ~900 entries, and "Test connection" lists it if you want to go hunting.
+ */
+export const PUTER_MODELS: { model: string; note: string }[] = [
+  { model: 'gpt-6-luna', note: 'cheapest · chat, summaries' },
+  { model: 'gpt-5.4-nano', note: 'fast · short answers' },
+  { model: 'gpt-6.1-sol', note: 'mid-tier · everyday coding' },
+  { model: 'gpt-6-astra', note: 'flagship · hardest problems' },
+  { model: 'openai/gpt-oss-120b', note: 'open weights · reasoning' },
+  { model: 'openai/gpt-5.3-codex', note: 'code generation' },
+];
+
+export const puterNoteFor = (model: string): string | undefined =>
+  PUTER_MODELS.find(m => m.model === model)?.note;
 
 /** KittenTTS nano v0.8 voices, in speaker-id order (index = ttsVoice). */
 export const KITTEN_VOICES: { id: number; name: string; note: string }[] = [

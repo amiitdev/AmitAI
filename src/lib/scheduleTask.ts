@@ -1,7 +1,7 @@
 import { loadSettings } from '../storage/store';
 import { describe, loadSchedules, markScheduleRun } from './schedules';
 import { makeExecutor } from './agentTools';
-import { runAgent } from '../api/openai';
+import { runAgent, isLocalEndpoint } from '../api/openai';
 import { notify } from './native';
 
 /**
@@ -39,6 +39,7 @@ export default async function scheduleTask(data: {
   }
 
   const exec = makeExecutor(settings);
+  const local = isLocalEndpoint(settings.baseUrl);
   const userText = [
     `[Scheduled task — ${schedule ? describe(schedule) : 'one-off'}]`,
     `Local time on the phone: ${new Date().toString()}.`,
@@ -67,8 +68,8 @@ export default async function scheduleTask(data: {
         maxTokens: settings.maxTokens,
         stream: false,
         reasoningEffort: settings.reasoningEffort,
-        tools: exec.tools,
-        maxRounds: 3,
+        tools: local ? undefined : exec.tools,
+        maxRounds: local ? 1 : 3,
         execute: exec.execute,
       },
       {
