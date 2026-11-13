@@ -16,6 +16,12 @@ import {
 } from './schedules';
 import { titleFrom } from '../storage/store';
 import { searchHistory } from './history';
+import {
+  AUTOMATION_TOOL_DEFS,
+  automationLabel,
+  automationToolsEnabled,
+  executeAutomationTool,
+} from './automationTools';
 
 /**
  * The tools the model is allowed to call, and what actually happens when it
@@ -244,10 +250,14 @@ export interface Executor {
  */
 export function makeExecutor(settings: Settings): Executor {
   let pagesLeft = Math.max(1, settings.maxPages);
+  // Action Mode tools are only advertised when the user turned them on: a model
+  // cannot call what it has not been given, and the permission (accessibility)
+  // is a human decision made in Android Settings, not a toggle we can fake.
+  const withAutomation = automationToolsEnabled(settings);
   // The model can only call what we advertise. Web tools are gated by the
   // two web toggles; weather / calculator / time are always available because
   // they are local and free.
-  const tools = TOOL_DEFS.filter(t => {
+  const baseTools = TOOL_DEFS.filter(t => {
     const name = t.function.name;
     if (name === 'web_search') return settings.webSearch;
     if (name === 'open_page') return settings.webRead;
@@ -261,9 +271,11 @@ export function makeExecutor(settings: Settings): Executor {
     if (name === 'search_chats') return settings.toolsChatHistory;
     return true;
   });
-
+  const tools = withAutomation ? [...baseTools, ...AUTOMATION_TOOL_DEFS] : baseTools;
+  const automationNames = new Set(AUTOMATION_TOOL_DEFS.map(t => t.function.name));
 
   const label = (name: string, args: any) => {
+    if (automationNames.has(name)) return automationLabel(name, args);
     if (name === 'web_search') return `Searching “${String(args?.query ?? '').slice(0, 40)}”`;
     if (name === 'open_page') return `Reading ${hostOf(String(args?.url ?? ''))}`;
     if (name === 'get_weather') return `Weather for “${String(args?.query ?? '').slice(0, 30)}”`;
@@ -281,6 +293,13 @@ export function makeExecutor(settings: Settings): Executor {
   };
 
   const execute = async (name: string, args: any): Promise<ExecuteResult> => {
+    if (automationNames.has(name)) {
+      if (!withAutomation) {
+        throw new Error('Action Mode is off in AmitAI, so phone control is not available');
+      }
+      return executeAutomationTool(name, args);
+    }
+
     if (name === 'web_search') {
       const query = String(args?.query ?? '').trim();
       if (!query) throw new Error('empty query');

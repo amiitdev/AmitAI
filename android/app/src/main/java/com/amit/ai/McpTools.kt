@@ -33,6 +33,50 @@ object McpTools {
         out.put(tool("search_chats", "Search the user's earlier AmitAI conversations.", JSONObject().put("query", text), JSONArray().put("query")))
         out.put(tool("get_weather", "Current weather for a city (Open-Meteo, no key).", JSONObject().put("query", text), JSONArray().put("query")))
         out.put(tool("get_time", "Current date and time. Optional IANA timezone like Asia/Kolkata.", JSONObject().put("timezone", text), JSONArray()))
+        out.put(
+            tool(
+                "automation_status",
+                "Action Mode: is accessibility granted/bound, what is running, how many actions completed.",
+                JSONObject(),
+                JSONArray(),
+            ),
+        )
+        out.put(
+            tool(
+                "open_app",
+                "Action Mode: open an installed app by package name, wait until it is in the foreground, return the screen.",
+                JSONObject().put("package_name", text).put("uri", text),
+                JSONArray().put("package_name"),
+            ),
+        )
+        out.put(tool("foreground_app", "Action Mode: which app is in front, and whether its window is readable.", JSONObject(), JSONArray()))
+        out.put(tool("screen_content", "Action Mode: read the visible text and interactive elements of the current screen.", JSONObject(), JSONArray()))
+        out.put(
+            tool(
+                "tap_element",
+                "Action Mode: tap an element by visible text or content description.",
+                JSONObject().put("text", text).put("content_description", text),
+                JSONArray(),
+            ),
+        )
+        out.put(
+            tool(
+                "type_text",
+                "Action Mode: type into the focused text field (never passwords/OTPs).",
+                JSONObject().put("text", text).put("submit", JSONObject().put("type", "boolean")),
+                JSONArray().put("text"),
+            ),
+        )
+        out.put(
+            tool(
+                "scroll_screen",
+                "Action Mode: scroll up/down/left/right and report whether the screen changed.",
+                JSONObject().put("direction", text),
+                JSONArray(),
+            ),
+        )
+        out.put(tool("press_back", "Action Mode: press the system Back button.", JSONObject(), JSONArray()))
+        out.put(tool("stop_automation", "Action Mode: stop automation immediately.", JSONObject(), JSONArray()))
         return out
     }
 
@@ -46,7 +90,56 @@ object McpTools {
         "search_chats" -> searchChats(ctx, args.optString("query"))
         "get_weather" -> weather(args.optString("query"))
         "get_time" -> clock(args.optString("timezone"))
+        // Action Mode (needs the accessibility service + Action Mode on).
+        "automation_status" -> automation(ctx, com.amit.ai.automation.AutomationAction.GetStatus)
+        "open_app" -> automation(
+            ctx,
+            com.amit.ai.automation.AutomationAction.OpenApp(
+                args.optString("package_name"),
+                args.optString("uri").ifBlank { null },
+            ),
+        )
+        "foreground_app" -> automation(ctx, com.amit.ai.automation.AutomationAction.GetForegroundApp)
+        "screen_content" -> automation(ctx, com.amit.ai.automation.AutomationAction.GetScreenContent())
+        "tap_element" -> automation(
+            ctx,
+            com.amit.ai.automation.AutomationAction.TapElement(
+                args.optString("text").ifBlank { null },
+                args.optString("content_description").ifBlank { null },
+            ),
+        )
+        "type_text" -> automation(
+            ctx,
+            com.amit.ai.automation.AutomationAction.TypeText(args.optString("text"), args.optBoolean("submit", false)),
+        )
+        "scroll_screen" -> automation(
+            ctx,
+            com.amit.ai.automation.AutomationAction.ScrollScreen(args.optString("direction", "down")),
+        )
+        "press_back" -> automation(ctx, com.amit.ai.automation.AutomationAction.PressBack)
+        "stop_automation" -> automation(ctx, com.amit.ai.automation.AutomationAction.Stop)
         else -> throw IllegalArgumentException("unknown tool $name")
+    }
+
+    /**
+     * Runs one automation action synchronously for an MCP caller.
+     *
+     * The engine is async by design (it has to wait for the screen), so this
+     * bridges with a latch. Each MCP connection already has its own thread, so
+     * blocking here cannot stall the app or another caller.
+     */
+    private fun automation(
+        ctx: Context,
+        action: com.amit.ai.automation.AutomationAction,
+    ): String {
+        val latch = java.util.concurrent.CountDownLatch(1)
+        val out = java.util.concurrent.atomic.AtomicReference("")
+        com.amit.ai.automation.AutomationManager.submit(ctx.applicationContext, action) { json ->
+            out.set(json)
+            latch.countDown()
+        }
+        latch.await(200, java.util.concurrent.TimeUnit.SECONDS)
+        return out.get().ifBlank { "{\"status\":\"timeout\",\"ok\":false,\"message\":\"no reply from the engine\"}" }
     }
 
     private fun notes(ctx: Context): JSONArray {

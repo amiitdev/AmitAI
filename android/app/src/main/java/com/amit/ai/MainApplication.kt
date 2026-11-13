@@ -24,6 +24,9 @@ class MainApplication : Application(), ReactApplication {
   override fun onCreate() {
     super.onCreate()
     loadReactNative(this)
+    // Action Mode state is read before any React code runs: the accessibility
+    // service can be bound (and can fire events) while JS is still booting.
+    com.amit.ai.automation.AutomationState.load(this)
     // Expose AmitAI's own tools to the local opencode agent (MCP, loopback only).
     // With "keep running" on, the foreground service owns the server instead, so
     // the agent can still reach it while AmitAI is not the app on screen.

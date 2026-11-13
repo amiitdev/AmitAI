@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    What AmitAI's accessibility service is allowed to see.
+
+    - typeWindowStateChanged     → "which app is in front", and the safety check
+    - typeWindowContentChanged   → the observe → act → verify loop's idle clock
+    - typeViewClicked / Focused / Scrolled → cheap screen-change signals
+    - flagReportViewIds          → resource ids, which make matching stable
+    - flagRetrieveInteractiveWindows → read the window that actually has focus
+    - canPerformGestures         → scroll fallback derived from element bounds
+
+    We deliberately do NOT ask for typeAllMask: reading every keystroke, every
+    notification and every announcement is not needed to tap a button, and it is
+    data we would then have to protect for no reason.
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged|typeViewClicked|typeViewFocused|typeViewScrolled"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagDefault|flagReportViewIds|flagRetrieveInteractiveWindows|flagIncludeNotImportantViews"
+    android:canRetrieveWindowContent="true"
+    android:canPerformGestures="true"
+    android:notificationTimeout="100"
+    android:description="@string/accessibility_service_description"
+    android:summary="@string/accessibility_service_summary"
+    android:settingsActivity="com.amit.ai.MainActivity" />

@@ -1,3 +1,14 @@
 <resources>
     <string name="app_name">AmitAI</string>
+    <string name="accessibility_service_label">AmitAI Action Mode</string>
+    <string name="accessibility_service_summary">Lets the assistant you asked use apps for you — tap, type and scroll — and stops on payment or password screens.</string>
+    <string name="accessibility_service_description">
+        Action Mode lets AmitAI carry out the task you typed: open an app, read what is on
+        screen, tap a button, type into a search box, scroll. It only runs while you have
+        Action Mode on, it shows an ongoing notification with a Stop button while it works,
+        and it stops immediately on password, OTP, banking and payment screens.
+        AmitAI never reads your passwords, never completes financial transactions, and
+        never answers Android permission dialogs for you. You can turn this off at any
+        time in Settings › Accessibility.
+    </string>
 </resources>
