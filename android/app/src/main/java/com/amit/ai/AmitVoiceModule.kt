@@ -286,6 +286,115 @@ class AmitVoiceModule(private val ctx: ReactApplicationContext) :
     }
   }
 
+  /* ------------------------------ backups ----------------------------- */
+
+  /**
+   * Backups of the state a reinstall destroys (settings, memory, schedules).
+   * They live in `<storage>/backup/` next to conversations.json, so the user can
+   * copy one off the phone with any file manager.
+   */
+  private fun backupDir(): java.io.File {
+    val dir = java.io.File(storageDir(), "backup")
+    if (!dir.exists()) dir.mkdirs()
+    return dir
+  }
+
+  /** Only our own names get through: no slashes, no traversal, no surprises. */
+  private fun backupFile(name: String): java.io.File? {
+    val safe = name.trim()
+    if (safe.isEmpty() || safe.length > 96) return null
+    if (!safe.matches(Regex("[A-Za-z0-9._-]+"))) return null
+    if (!safe.endsWith(".json")) return null
+    return java.io.File(backupDir(), safe)
+  }
+
+  @ReactMethod
+  fun writeBackup(name: String, value: String, promise: com.facebook.react.bridge.Promise) {
+    try {
+      val file = backupFile(name)
+          ?: return promise.reject("backup_name", "Invalid backup file name")
+      // write-then-rename, so a process death mid-write cannot leave a
+      // half-file that restore will happily parse into nothing
+      val tmp = java.io.File(file.parentFile, file.name + ".tmp")
+      tmp.outputStream().use { out -> out.write(value.toByteArray(Charsets.UTF_8)) }
+      if (!tmp.renameTo(file)) {
+        tmp.copyTo(file, overwrite = true)
+        tmp.delete()
+      }
+      promise.resolve(true)
+    } catch (e: Exception) {
+      promise.reject("backup_write", e)
+    }
+  }
+
+  @ReactMethod
+  fun listBackups(promise: com.facebook.react.bridge.Promise) {
+    try {
+      val dir = backupDir()
+      val files = dir.listFiles { f -> f.isFile && f.name.endsWith(".json") } ?: emptyArray()
+      val arr = com.facebook.react.bridge.Arguments.createArray()
+      for (f in files.sortedByDescending { it.lastModified() }) {
+        val m = com.facebook.react.bridge.Arguments.createMap()
+        m.putString("name", f.name)
+        m.putDouble("bytes", f.length().toDouble())
+        m.putDouble("at", f.lastModified().toDouble())
+        arr.pushMap(m)
+      }
+      promise.resolve(jsonOf(arr))
+    } catch (e: Exception) {
+      promise.resolve("[]")
+    }
+  }
+
+  /** org.json is on every Android build, no dependency needed. */
+  private fun jsonOf(arr: com.facebook.react.bridge.WritableArray): String =
+      org.json.JSONArray(arr.toArrayList()).toString()
+
+  @ReactMethod
+  fun readBackup(name: String, promise: com.facebook.react.bridge.Promise) {
+    try {
+      val file = backupFile(name) ?: return promise.resolve(null)
+      if (!file.exists()) return promise.resolve(null)
+      promise.resolve(file.readText(Charsets.UTF_8))
+    } catch (e: Exception) {
+      promise.resolve(null)
+    }
+  }
+
+  @ReactMethod
+  fun deleteBackup(name: String, promise: com.facebook.react.bridge.Promise) {
+    try {
+      val file = backupFile(name) ?: return promise.resolve(false)
+      promise.resolve(if (file.exists()) file.delete() else false)
+    } catch (e: Exception) {
+      promise.resolve(false)
+    }
+  }
+
+  /* -------------------------- screen protection ----------------------- */
+
+  /**
+   * FLAG_SECURE: no screenshots, and a blank card in the recents switcher.
+   * Used by the app lock; harmless when the lock is off and the toggle is off.
+   */
+  @ReactMethod
+  fun setSecureScreen(secure: Boolean, promise: com.facebook.react.bridge.Promise) {
+    try {
+      val activity = ctx.currentActivity
+      if (activity == null) {
+        promise.resolve(false)
+        return
+      }
+      activity.runOnUiThread {
+        val flag = android.view.WindowManager.LayoutParams.FLAG_SECURE
+        if (secure) activity.window.addFlags(flag) else activity.window.clearFlags(flag)
+      }
+      promise.resolve(true)
+    } catch (e: Exception) {
+      promise.reject("secure_screen", e)
+    }
+  }
+
   /* ---------------------------- chat storage -------------------------- */
 
   /**

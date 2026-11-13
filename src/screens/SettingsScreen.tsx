@@ -22,6 +22,9 @@ import { speakAloud, stopAllSpeech } from '../lib/speech';
 import { resetQuota } from '../lib/quota';
 import { AssistantSection } from '../components/AssistantSection';
 import { StorageSection } from '../components/StorageSection';
+import { BackupSection } from '../components/BackupSection';
+import { hasAutomation, openAccessibilitySettings, setActionMode } from '../lib/automation';
+import { useAutomationStatus } from '../lib/useAutomation';
 
 /** Model chips offered per endpoint — only models that were verified there. */
 const MODELS_FOR = (url: string): string[] => {
@@ -55,9 +58,11 @@ interface Props {
   onChange: (patch: Partial<Settings>) => void;
   onBack: () => void;
   onClearChats: () => void;
+  /** Opens the dedicated Action Mode screen (permission, live state, history). */
+  onActionMode?: () => void;
 }
 
-export function SettingsScreen({ settings, onChange, onBack, onClearChats }: Props) {
+export function SettingsScreen({ settings, onChange, onBack, onClearChats, onActionMode }: Props) {
   const { colors, theme, setTheme } = useTheme();      const [testing, setTesting] = useState(false);
   const [ttsInfo, setTtsInfo] = useState<Awaited<ReturnType<typeof ttsStatus>>>(null);
   const [models, setModels] = useState<string[] | null>(null);
@@ -65,6 +70,7 @@ export function SettingsScreen({ settings, onChange, onBack, onClearChats }: Pro
   const [mcp, setMcp] = useState<McpInfo | null>(null);
   const [puterOpen, setPuterOpen] = useState(false);
   const keyboard = useKeyboardHeight();
+  const automation = useAutomationStatus();
 
   useEffect(() => {
     mcpInfo().then(setMcp).catch(() => {});
@@ -448,6 +454,89 @@ export function SettingsScreen({ settings, onChange, onBack, onClearChats }: Pro
         closed.
       </Text>
 
+      {hasAutomation && (
+        <>
+          <Text style={styles.section}>Action Mode (phone control)</Text>
+          <Text style={styles.hint}>
+            Lets the assistant open apps, read the screen and tap for you. It needs Android's
+            accessibility service — a permission only you can grant — and it stops on password,
+            OTP, banking and payment screens. Every action is listed in Action Mode › History.
+          </Text>
+
+          <View style={styles.row}>
+            <Text style={styles.label}>Action Mode</Text>
+            <TouchableOpacity
+              onPress={() => {
+                const next = !settings.actionMode;
+                onChange({ actionMode: next });
+                setActionMode(next).then(() => automation.refresh());
+                if (next && !automation.permission?.enabled) {
+                  Alert.alert(
+                    'Enable AmitAI Action Mode',
+                    'Android requires you to turn on “AmitAI Action Mode” in Settings › ' +
+                      'Accessibility. Until then the assistant can ask, but nothing can be tapped.\n\n' +
+                      'While it works you will see an ongoing notification with a Stop button.',
+                    [
+                      { text: 'Later', style: 'cancel' },
+                      { text: 'Open settings', onPress: () => openAccessibilitySettings() },
+                    ],
+                  );
+                }
+              }}
+              style={[styles.toggle, settings.actionMode && styles.toggleOn]}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.knob, settings.actionMode && styles.knobOn]} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.row}>
+            <Text style={styles.label}>Let the agent use it</Text>
+            <TouchableOpacity
+              onPress={() => onChange({ toolsAutomation: !settings.toolsAutomation })}
+              style={[styles.toggle, settings.toolsAutomation && styles.toggleOn]}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.knob, settings.toolsAutomation && styles.knobOn]} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.row}>
+            <Text style={styles.label}>Android accessibility</Text>
+            <Text
+              style={[
+                styles.stepVal,
+                {
+                  color:
+                    automation.permission?.enabled && automation.permission?.connected
+                      ? colors.ok
+                      : colors.danger,
+                  fontFamily: undefined,
+                  fontSize: 12,
+                },
+              ]}
+            >
+              {automation.permission?.enabled
+                ? automation.permission?.connected
+                  ? 'connected'
+                  : 'enabled · unbound'
+                : 'not enabled'}
+            </Text>
+          </View>
+
+          {!!onActionMode && (
+            <TouchableOpacity
+              style={styles.testBtn}
+              onPress={() => {
+                onActionMode();
+              }}
+            >
+              <Text style={styles.testText}>Open Action Mode</Text>
+            </TouchableOpacity>
+          )}
+        </>
+      )}
+
       <Text style={styles.section}>opencode MCP</Text>
       <Text style={styles.hint}>
         Loopback endpoint where the opencode agent can call AmitAI's own tools
@@ -531,6 +620,8 @@ export function SettingsScreen({ settings, onChange, onBack, onClearChats }: Pro
         Moves conversation history off AsyncStorage onto the app-private downloads folder.
         Useful when you keep long chat histories. Switches back cleanly too.
       </Text>
+
+      <BackupSection settings={settings} onChange={onChange} />
 
       <Text style={styles.section}>Usage this week</Text>
       {usage ? (          <View style={styles.usageCard}>

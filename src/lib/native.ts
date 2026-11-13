@@ -404,3 +404,19 @@ export async function ensureNotificationPermission(): Promise<boolean> {
   );
   return res === PermissionsAndroid.RESULTS.GRANTED;
 }
+
+/**
+ * FLAG_SECURE on the main window: no screenshots, blank recents card.
+ *
+ * Part of the app lock. Returns false when the bridge or the activity is not
+ * there yet (cold start), which the caller simply retries on the next toggle —
+ * nothing in the app depends on it having succeeded.
+ */
+export async function setSecureScreen(secure: boolean): Promise<boolean> {
+  if (!AmitVoice?.setSecureScreen) return false;
+  try {
+    return !!(await AmitVoice.setSecureScreen(secure));
+  } catch {
+    return false;
+  }
+}

@@ -12,7 +12,9 @@ import {
   BackHandler,
   ActivityIndicator,
   DeviceEventEmitter,
+  AppState,
 } from 'react-native';
+import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@react-native-vector-icons/ionicons';
 
@@ -42,12 +44,31 @@ import { applySchedules, loadSchedules } from './src/lib/schedules';
 import { addNote, formatNotes, loadNotes } from './src/lib/memory';
 import { parseMemoryCommand } from './src/lib/memoryCommands';
 import { buildRecallPreamble } from './src/lib/history';
+import { isNearBottom } from './src/lib/chatScroll';
+import { shouldLock } from './src/lib/lock';
+import { autoBackupIfDue } from './src/lib/backup';
+import { setSecureScreen } from './src/lib/native';
+import { LockScreen } from './src/components/LockScreen';
 import { Bubble } from './src/components/Bubble';
 import { Composer } from './src/components/Composer';
 import { ConversationList } from './src/components/ConversationList';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { SchedulesScreen } from './src/screens/SchedulesScreen';
 import { MemoryScreen } from './src/screens/MemoryScreen';
+import { ActionModeScreen } from './src/screens/ActionModeScreen';
+import { AutomationBar } from './src/components/AutomationBar';
+import { ConfirmActionDialog } from './src/components/ConfirmActionDialog';
+import {
+  AutomationConfirmRequest,
+  beginSession,
+  confirmAction,
+  endSession,
+  hasAutomation,
+  onAutomationConfirm,
+  stopAutomation,
+} from './src/lib/automation';
+import { AUTOMATION_SYSTEM_PROMPT } from './src/lib/automationTools';
+import { useAutomationStatus } from './src/lib/useAutomation';
 import { useKeyboardHeight } from './src/lib/useKeyboard';
 import { stopAllSpeech } from './src/lib/speech';
 import {
@@ -62,7 +83,7 @@ import {
   SharedPayload,
 } from './src/lib/native';
 
-type Screen = 'chat' | 'settings' | 'drawer' | 'schedules' | 'memory';
+type Screen = 'chat' | 'settings' | 'drawer' | 'schedules' | 'memory' | 'action';
 
 const emptyConversation = () => newConversation();
 
@@ -101,6 +122,37 @@ function AppInner() {
   const [modelLoading, setModelLoading] = useState(false);
   const [toolStage, setToolStage] = useState<string | null>(null);
   const [voiceMode, setVoiceMode] = useState(false);
+  /** locked at cold start (a PIN exists) and after a minute in the background */
+  const [locked, setLocked] = useState(false);
+  const awayAt = useRef<number | null>(null);
+
+  // Action Mode: live state for the strip/header, and the one confirmation
+  // dialog the agent can be blocked on. The listener is removed on unmount so a
+  // late event can never set state on a screen that no longer exists.
+  const automation = useAutomationStatus();
+  const refreshAutomation = automation.refresh;
+  const [confirmReq, setConfirmReq] = useState<AutomationConfirmRequest | null>(null);
+  useEffect(() => {
+    const off = onAutomationConfirm(req => setConfirmReq(req));
+    return () => off();
+  }, []);
+
+  /** Escape hatch used by the strip, the header and the notification path. */
+  const stopActionMode = useCallback(async () => {
+    await stopAutomation().catch(() => {});
+    refreshAutomation();
+  }, [refreshAutomation]);
+
+  /** The user's answer to a confirmation. Stable identity: the dialog's
+   *  countdown effect must not restart on every streaming re-render. */
+  const answerConfirm = useCallback(
+    async (id: string, approved: boolean) => {
+      setConfirmReq(null);
+      await confirmAction(id, approved);
+      refreshAutomation();
+    },
+    [refreshAutomation],
+  );
 
   // Opened by "Ok Amit" or the floating bubble → jump straight into voice mode.
   useEffect(() => {
@@ -154,6 +206,53 @@ function AppInner() {
   const voiceRunRef = useRef<RunHandle | null>(null);
   const sourcesRef = useRef<Source[]>([]);
   const listRef = useRef<FlatList<Message>>(null);
+
+  /**
+   * Follow the newest message — but only while the user is already at the
+   * bottom.
+   *
+   * The old code scrolled to the end inside `onContentSizeChange` unconditionally.
+   * A long chat re-measures cells while you scroll (virtualisation) and every
+   * re-measure changes the content size, so reading an old message meant one
+   * flick up and then a yank back down — over and over. Short chats never
+   * re-measure after the first layout, which is why they were fine.
+   */
+  const atBottom = useRef(true);
+  const didInitialScroll = useRef(false);
+  /** Same facts as `atBottom`, but as state so the jump buttons can react. */
+  const [scrollPos, setScrollPos] = useState({ atTop: true, atBottom: true });
+
+  const onListScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const m = e.nativeEvent;
+    atBottom.current = isNearBottom(m);
+    const atTop = m.contentOffset.y <= 40;
+    setScrollPos(prev =>
+      prev.atTop === atTop && prev.atBottom === atBottom.current
+        ? prev
+        : { atTop, atBottom: atBottom.current },
+    );
+  }, []);
+
+  const jumpTop = useCallback(() => {
+    atBottom.current = false;
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
+  }, []);
+
+  const jumpBottom = useCallback(() => {
+    atBottom.current = true;
+    listRef.current?.scrollToEnd({ animated: true });
+  }, []);
+
+  const followToEnd = useCallback((animated = false) => {
+    if (!atBottom.current) return;
+    listRef.current?.scrollToEnd({ animated });
+  }, []);
+
+  // Opening a chat starts at the newest message, like every other messenger.
+  useEffect(() => {
+    atBottom.current = true;
+    didInitialScroll.current = false;
+  }, [activeId]);
   const ready = useRef(false);
 
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -165,6 +264,8 @@ function AppInner() {
       const [s, list] = await Promise.all([loadSettings(), loadConversations()]);
       setSettings(s);
       if (s.theme) setTheme(s.theme);
+      // A PIN means the chats do not open by themselves.
+      if (s.appLock && s.pinHash) setLocked(true);
       if (list.length) {
         setConversations(list);
         setActiveId(list[0].id);
@@ -195,6 +296,42 @@ function AppInner() {
     });
     return () => sub.remove();
   }, [screen]);
+
+  /* ----------------------- lock, backup, screen ------------------------ */
+
+  /**
+   * Going to the background is the moment worth capturing: it is when the app
+   * usually gets killed, and when a reinstall becomes likely. The throttle
+   * lives in backup.ts, so a chatty session cannot litter the folder.
+   */
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', st => {
+      if (st === 'active') {
+        // awayAt is only set on the way out; a first 'active' at cold start
+        // must not relock a session the user just unlocked.
+        if (
+          awayAt.current !== null &&
+          shouldLock({
+            appLock: settings.appLock,
+            hasPin: !!settings.pinHash,
+            backgroundedAt: awayAt.current,
+            now: Date.now(),
+          })
+        ) {
+          setLocked(true);
+        }
+        return;
+      }
+      awayAt.current = Date.now();
+      autoBackupIfDue({ settings }).catch(() => {});
+    });
+    return () => sub.remove();
+  }, [settings]);
+
+  // FLAG_SECURE follows the toggle: no screenshots, blank recents thumbnail.
+  useEffect(() => {
+    setSecureScreen(settings.blockScreenshots).catch(() => {});
+  }, [settings.blockScreenshots]);
 
   useEffect(() => {
     configureVoice({
@@ -392,11 +529,32 @@ function AppInner() {
         setStreaming(false);
         setToolStage(null);
         streamRef.current = null;
+        // Release the phone: the turn is over, so the foreground service and
+        // the "acting on screen" card go away even if the agent never called
+        // stop_automation itself.
+        if (hasAutomation && settings.actionMode) endSession().catch(() => {});
       };
 
       const exec = makeExecutor(settings);
       // A loopback GGUF prints tool calls as plain text, so it gets no tools at all.
       const local = isLocalEndpoint(settings.baseUrl);
+      // Action Mode needs a longer tool budget: open → read → tap → read … and
+      // an instruction block that makes "look at the screen" mandatory.
+      const actionMode = hasAutomation && settings.actionMode && settings.toolsAutomation;
+      const systemPrompt = [
+        settings.systemPrompt,
+        recall,
+        actionMode ? AUTOMATION_SYSTEM_PROMPT : '',
+      ]
+        .filter(Boolean)
+        .join('\n\n');
+
+      // A new user request is a fresh consent: it clears a previous emergency
+      // stop so the model may act again, and it starts the foreground service
+      // that keeps the process alive while Android shows another app.
+      if (actionMode) {
+        beginSession().catch(() => {});
+      }
 
       streamRef.current = runAgent(
         {
@@ -404,16 +562,14 @@ function AppInner() {
           apiKey: settings.apiKey,
           model: settings.model,
           messages: history,
-          systemPrompt: recall
-            ? `${settings.systemPrompt}\n\n${recall}`
-            : settings.systemPrompt,
+          systemPrompt,
           temperature: settings.temperature,
           maxTokens: settings.maxTokens,
           stream: settings.stream,
           reasoningEffort: settings.reasoningEffort,
           simulate429: settings.simulate429,
           tools: local ? undefined : exec.tools,
-          maxRounds: local ? 1 : settings.webSearch ? 3 : 1,
+          maxRounds: local ? 1 : actionMode ? 12 : settings.webSearch ? 3 : 1,
           execute: exec.execute,
         },
         {
@@ -453,6 +609,10 @@ function AppInner() {
     const attachments = imageUris.slice(0, MAX_IMAGES);
     // Images with no caption are a valid message now.
     if ((!text && !attachments.length) || streaming || !active) return;
+
+    // A message you just sent is the one thing that should always pull the
+    // list down, even if you had scrolled up to re-read something.
+    atBottom.current = true;
 
     // Handled on-device: some providers (the local bridge) drop `tools`.
     const cmd = text && !attachments.length ? parseMemoryCommand(text) : null;
@@ -518,6 +678,8 @@ function AppInner() {
     streamRef.current = null;
     setStreaming(false);
     setToolStage(null);
+    // Stopping a reply that was driving the phone must also let go of the phone.
+    if (hasAutomation) stopAutomation().catch(() => {});
     updateActive(c => ({
       ...c,
       messages: c.messages.map(m => (m.streaming ? { ...m, streaming: false } : m)),
@@ -558,6 +720,11 @@ function AppInner() {
         let voiceStats: RunStats | null = null;
         const exec = makeExecutor(settings);
         const localVoice = isLocalEndpoint(settings.baseUrl);
+        const voiceAction = hasAutomation && settings.actionMode && settings.toolsAutomation;
+        const voicePrompt = voiceAction
+          ? `${settings.systemPrompt}\n\n${AUTOMATION_SYSTEM_PROMPT}`
+          : settings.systemPrompt;
+        if (voiceAction) beginSession().catch(() => {});
 
         voiceRunRef.current = runAgent(
           {
@@ -565,7 +732,7 @@ function AppInner() {
             apiKey: settings.apiKey,
             model: settings.model,
             messages: history,
-            systemPrompt: settings.systemPrompt,
+            systemPrompt: voicePrompt,
             temperature: settings.temperature,
             maxTokens: settings.maxTokens,
             // voice wants the whole answer at once, to speak it in one go
@@ -573,7 +740,7 @@ function AppInner() {
             reasoningEffort: settings.reasoningEffort,
             simulate429: settings.simulate429,
             tools: localVoice ? undefined : exec.tools,
-            maxRounds: localVoice ? 1 : settings.webSearch ? 3 : 1,
+            maxRounds: localVoice ? 1 : voiceAction ? 12 : settings.webSearch ? 3 : 1,
             execute: exec.execute,
           },
           {
@@ -588,6 +755,7 @@ function AppInner() {
             },
             onDone: t => {
               voiceRunRef.current = null;
+              if (hasAutomation && settings.actionMode) endSession().catch(() => {});
               const answer = t || full;
               const st = voiceStats as RunStats | null;
               updateActive(c => ({
@@ -610,6 +778,7 @@ function AppInner() {
             },
             onError: e => {
               voiceRunRef.current = null;
+              if (hasAutomation && settings.actionMode) endSession().catch(() => {});
               reject(e);
             },
           },
@@ -666,6 +835,33 @@ function AppInner() {
         <Ionicons name="call-outline" size={18} color={colors.accent} />
       </TouchableOpacity>
 
+      {hasAutomation && (
+        <TouchableOpacity
+          onPress={() => setScreen('action')}
+          hitSlop={8}
+          style={styles.newIcon}
+        >
+          <Ionicons
+            name={settings.actionMode ? 'hand-left' : 'hand-left-outline'}
+            size={18}
+            color={settings.actionMode ? colors.accent : colors.textDim}
+          />
+          {settings.actionMode && (
+            <View
+              style={[
+                styles.actionDot,
+                {
+                  backgroundColor:
+                    automation.status?.session_active || automation.status?.status === 'running'
+                      ? colors.ok
+                      : colors.accent,
+                },
+              ]}
+            />
+          )}
+        </TouchableOpacity>
+      )}
+
       <TouchableOpacity onPress={newChat} hitSlop={8} style={styles.newIcon}>
         <Ionicons name="create-outline" size={19} color={colors.text} />
       </TouchableOpacity>
@@ -676,7 +872,12 @@ function AppInner() {
     <View style={styles.root}>
       <StatusBar barStyle="light-content" />
 
-      {voiceMode ? (
+      {locked && settings.pinHash ? (
+        <LockScreen
+          pin={{ salt: settings.pinSalt, hash: settings.pinHash }}
+          onUnlock={() => setLocked(false)}
+        />
+      ) : voiceMode ? (
         <VoiceMode
           onClose={() => {
             voiceRunRef.current?.stop();
@@ -697,6 +898,7 @@ function AppInner() {
             settings={settings}
             onChange={patchSettings}
             onBack={() => setScreen('chat')}
+            onActionMode={() => setScreen('action')}
             onClearChats={() => {
               const c = emptyConversation();
               setConversations([c]);
@@ -712,6 +914,14 @@ function AppInner() {
       ) : screen === 'memory' ? (
         <View style={{ flex: 1, paddingTop: insets.top }}>
           <MemoryScreen onBack={() => setScreen('chat')} />
+        </View>
+      ) : screen === 'action' ? (
+        <View style={{ flex: 1, paddingTop: insets.top }}>
+          <ActionModeScreen
+            settings={settings}
+            onChange={patchSettings}
+            onBack={() => setScreen('chat')}
+          />
         </View>
       ) : (
         <View style={{ flex: 1 }}>
@@ -733,8 +943,14 @@ function AppInner() {
                 onRegenerate={regenerate}
               />
             )}
-            onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
-            onLayout={() => listRef.current?.scrollToEnd({ animated: false })}
+            onScroll={onListScroll}
+            scrollEventThrottle={16}
+            onContentSizeChange={() => followToEnd(false)}
+            onLayout={() => {
+              if (didInitialScroll.current) return;
+              didInitialScroll.current = true;
+              listRef.current?.scrollToEnd({ animated: false });
+            }}
             ListEmptyComponent={
               <View style={styles.welcome}>
                 <Text style={styles.welcomeTitle}>AmitAI</Text>
@@ -748,6 +964,25 @@ function AppInner() {
             keyboardShouldPersistTaps="handled"
           />
 
+          {(screen === 'chat' && !voiceMode && (scrollPos.atBottom === false || scrollPos.atTop === false)) && (
+            <View style={styles.jumpCol} pointerEvents="box-none">
+              {!scrollPos.atTop && (
+                <TouchableOpacity style={styles.jumpBtn} onPress={jumpTop} activeOpacity={0.8}>
+                  <Ionicons name="chevron-up" size={20} color={colors.text} />
+                </TouchableOpacity>
+              )}
+              {!scrollPos.atBottom && (
+                <TouchableOpacity
+                  style={[styles.jumpBtn, styles.jumpBtnAccent]}
+                  onPress={jumpBottom}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="chevron-down" size={20} color="#fff" />
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
           {!!toolStage && (
             <View style={styles.toolChip}>
               <ActivityIndicator size="small" color={colors.accent} />
@@ -756,6 +991,12 @@ function AppInner() {
               </Text>
             </View>
           )}
+
+          <AutomationBar
+            status={automation.status}
+            onOpen={() => setScreen('action')}
+            onStop={stopActionMode}
+          />
 
           <View style={[styles.composerWrap, { paddingBottom: bottomPad }]}>
             <Composer
@@ -789,6 +1030,8 @@ function AppInner() {
       )}
 
       <WebReader />
+
+      <ConfirmActionDialog request={confirmReq} onAnswer={answerConfirm} />
 
       <ActionSheet
         visible={modelSheet}
@@ -827,6 +1070,7 @@ function AppInner() {
               onSettings={() => setScreen('settings')}
               onSchedules={() => setScreen('schedules')}
               onMemory={() => setScreen('memory')}
+              onActionMode={() => setScreen('action')}
             />
           </View>
         </View>
@@ -883,6 +1127,14 @@ const createStyles = (colors: ThemeColors) =>
     alignItems: 'center',
     justifyContent: 'center',
   },
+  actionDot: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
   newIconText: { color: colors.text, fontSize: 15 },
   list: { padding: space(4), paddingBottom: space(8) },
   welcome: { marginTop: space(24), alignItems: 'center', paddingHorizontal: space(6) },
@@ -911,6 +1163,25 @@ const createStyles = (colors: ThemeColors) =>
     maxWidth: '88%',
   },
   toolChipText: { color: colors.textDim, fontSize: 12, flexShrink: 1 },
+  /** Jump-to-top / jump-to-bottom, floating over the last message. */
+  jumpCol: {
+    position: 'absolute',
+    right: space(3),
+    bottom: space(22),
+    gap: space(2),
+    alignItems: 'center',
+  },
+  jumpBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.bgRaised,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  jumpBtnAccent: { backgroundColor: colors.accent, borderColor: colors.accent },
   drawerWrap: { flex: 1, flexDirection: 'row' },
   scrim: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)' },
   drawer: {

@@ -108,6 +108,17 @@ export interface Settings {
   /** let the model search earlier conversations saved on this phone */
   toolsChatHistory: boolean;
 
+  /* ---- Action Mode (phone control) ---- */
+  /**
+   * Master switch for the accessibility-driven automation. Off means the
+   * automation tools are not even advertised to the model. Turning it on
+   * still requires the user to enable "AmitAI Action Mode" in Android
+   * Settings › Accessibility — this flag cannot grant that.
+   */
+  actionMode: boolean;
+  /** second switch, so Action Mode can stay on while the agent is not allowed to drive */
+  toolsAutomation: boolean;
+
   /* ---- storage ---- */
   /** 'default' = SharedPreferences + AsyncStorage (small, survives keychain loss).
    *  'sdcard' = app-private external files dir (large, for long chat histories).
@@ -115,6 +126,19 @@ export interface Settings {
    *  just starts reading from prefs again. Both backends are written on save so
    *  a switch in either direction never loses data. */
   storageMode: 'default' | 'sdcard';
+
+  /* ---- backup & security ---- */
+  /** write a backup into /sdcard/AmitAI/backup/ when the app goes to the background */
+  autoBackup: boolean;
+  /** include API keys and tokens in a manual backup (off = secrets stay on the phone) */
+  backupWithKeys: boolean;
+  /** ask for a PIN when the app starts, or after a minute in the background */
+  appLock: boolean;
+  /** sha256(salt:pin) — the PIN itself is never stored */
+  pinHash: string;
+  pinSalt: string;
+  /** FLAG_SECURE: blocks screenshots and blanks the recents thumbnail */
+  blockScreenshots: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -145,6 +169,14 @@ export const DEFAULT_SETTINGS: Settings = {
   toolsMemory: true,
   toolsSchedules: true,
   toolsChatHistory: true,
+  actionMode: false,
+  toolsAutomation: true,
+  autoBackup: true,
+  backupWithKeys: false,
+  appLock: false,
+  pinHash: '',
+  pinSalt: '',
+  blockScreenshots: false,
 };
 
 /* ------------------------------------------------------------------ */

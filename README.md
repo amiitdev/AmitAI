@@ -100,6 +100,8 @@ the model runs on the phone's own CPU/GPU. See §13.
 18. [Why this is not a ChatGPT clone](#18-why-this-is-not-a-chatgpt-clone)
 19. [Credits](#19-credits)
 20. [Everything AmitAI can do — with examples](#20-everything-amitai-can-do--with-examples)
+21. [Action Mode](#21-action-mode)
+22. [Backup, app lock and the jump buttons](#22-backup-app-lock-and-the-jump-buttons)
 
 ---
 
@@ -384,6 +386,17 @@ the agent answers **December** — across sessions, which plain opencode cannot 
 
 Plus an animated splash (ken-burns background + spring logo) and edge-to-edge
 keyboard handling that lifts the composer by the real IME height.
+
+### 🖐 Action Mode (4.3)
+
+| Feature | Detail |
+|---|---|
+| Real UI control | open apps, read the screen, tap, type, scroll, back — through Android's accessibility service |
+| Verified actions | every tap is checked against the screen; no change ⇒ `failed`, never `success` |
+| 13 tools | the full list is in [§21](#21-action-mode) |
+| Hard safety rules | passwords, OTPs, banking apps and permission dialogs are untouchable; Send/Pay/Delete need a fresh yes |
+| Always visible | ongoing notification with **Stop**, plus a live bar with app, action, `7 / 40` and progress |
+| Off by default | nothing happens until you grant it in Settings **and** flip the toggle |
 
 ---
 
@@ -1024,7 +1037,7 @@ AmitAI/
 ├── index.js                        registers <App/>
 ├── assets/                         generated mark (see design/build-assets.py)
 ├── releases/                       APK index + checksums (binaries live on Releases)
-├── __tests__/                      15 suites, 114 tests
+├── __tests__/                      21 suites, 180 tests
 ├── scripts/fetch-tts.sh            sherpa libs + Piper/Kitten models (~150 MB)
 ├── design/                         icon geometry: build-assets.py (every output),
 │                                   candidates.py (the rejected directions)
@@ -1052,6 +1065,12 @@ AmitAI/
     │   ├── barge.ts                echo guard + stop words
     │   ├── quota.ts                per-model daily counters, 429 learning
     │   ├── usage.ts                weekly requests/tokens/cost
+    │   ├── automation.ts           Action Mode bridge: status, events, confirm
+    │   ├── automationTools.ts      the 13 automation tools the model can call
+    │   ├── backup.ts               backup/restore of settings, notes, schedules
+    │   ├── lock.ts                 PIN rules, salted hash, when to re-lock
+    │   ├── sha256.ts               dependency-free SHA-256 (FIPS vectors tested)
+    │   ├── chatScroll.ts           "follow the bottom only when you are at it"
 │   ├── measure.ts              durations, tok/s, the reply footer line
     │   └── useKeyboard.ts          edge-to-edge IME inset handling
     ├── components/
@@ -1068,11 +1087,16 @@ AmitAI/
     │   ├── AssistantSection.tsx    wake word, bubble, listening policy
     │   ├── StorageSection.tsx      folder, free space, all-files grant
     │   ├── PuterSignIn.tsx         Puter auth sheet (WebView + token intercept)
+    │   ├── AutomationBar.tsx       live: app, action, count, progress, Stop
+    │   ├── ConfirmActionDialog.tsx fresh consent for one sensitive action
+    │   ├── BackupSection.tsx       settings: backup list, auto-backup, lock, FLAG_SECURE
+    │   ├── LockScreen.tsx          the PIN gate
     │   └── SplashScreen.tsx        launch screen: the mark drawn as SVG
     └── screens/
         ├── SettingsScreen.tsx      ~850 lines, every switch documented below
         ├── SchedulesScreen.tsx     jobs, next run, pause, delete, last answer
         ├── MemoryScreen.tsx        audit and delete what the model remembers
+        ├── ActionModeScreen.tsx    disclosure, grant, toggle, history
         └── VoiceMode.tsx           hands-free loop + barge-in
 
 android/app/src/main/java/com/amit/ai/
@@ -1093,7 +1117,16 @@ android/app/src/main/java/com/amit/ai/
 ├── AmitMcpServer.kt                HTTP/JSON-RPC server on 127.0.0.1:8140
 ├── McpTools.kt                     the five tools the agent can call
 ├── BootReceiver.kt                 restore wake + MCP server + rebuild alarms
-└── MicGate.kt                      mic arbitration
+├── MicGate.kt                      mic arbitration
+└── automation/                     Action Mode (see §21)
+    ├── AmitAccessibilityService.kt   the service Android binds to
+    ├── AutomationManager.kt          observe → act → verify engine
+    ├── AccessibilityNodeHelper.kt    tree walk, text, clickable nodes
+    ├── AutomationPolicy.kt           never-touch rules (passwords, OTP, banking)
+    ├── AutomationAction.kt / AutomationResult.kt   typed in/out
+    ├── AutomationState.kt            session state, history, counters
+    ├── AutomationService.kt          foreground service + ongoing Stop card
+    └── AmitAutomationModule.kt       the RN bridge
 ```
 
 ---
@@ -1236,31 +1269,48 @@ $ echo $?
 
 ```bash
 $ npx jest --silent
-PASS __tests__/VoiceAndTheme.test.tsx
-PASS __tests__/MultiImage.test.ts
-PASS __tests__/SpeechState.test.tsx
+PASS __tests__/App.test.tsx
+PASS __tests__/AutomationBar.test.tsx
+PASS __tests__/AutomationBridge.test.ts
+PASS __tests__/AutomationTools.test.ts
+PASS __tests__/History.test.ts
+PASS __tests__/LocalEndpoint.test.ts
 PASS __tests__/MarkdownTable.test.tsx
+PASS __tests__/MemoryCommands.test.ts
 PASS __tests__/Memory.test.ts
+PASS __tests__/MultiImage.test.ts
+PASS __tests__/Puter.test.ts
+PASS __tests__/ReplyTiming.test.tsx
 PASS __tests__/Schedule.test.ts
 PASS __tests__/SettingsProviders.test.tsx
-PASS __tests__/App.test.tsx
-PASS __tests__/History.test.ts
-PASS __tests__/MemoryCommands.test.ts
+PASS __tests__/SpeechState.test.tsx
+PASS __tests__/Transcript.test.tsx
+PASS __tests__/VoiceAndTheme.test.tsx
 PASS __tests__/VoiceLoop.test.tsx
 
-Test Suites: 11 passed, 11 total
-Tests:       82 passed, 82 total
+Test Suites: 21 passed, 21 total
+Tests:       180 passed, 180 total
 Snapshots:   0 total
-Time:        7.08 s
+Time:        7.152 s
 ```
 
 ```bash
 $ npx eslint .
-✖ 19 problems (0 errors, 19 warnings)
+✖ 32 problems (0 errors, 32 warnings)
 ```
 
-The 19 warnings are the project's existing inline-style/`no-void` style nits —
+The 32 warnings are the project's existing inline-style/`no-void` style nits —
 there are **no errors**.
+
+```bash
+$ cd android && ./gradlew :app:testDebugUnitTest --offline
+BUILD SUCCESSFUL
+```
+
+`android/app/src/test/…/AutomationPolicyTest.kt` is a plain JVM test (no
+emulator): it feeds fake node trees to the safety rules and asserts that
+password fields, OTP screens, banking packages and unconfirmed Send taps are
+blocked before any action runs.
 
 What the suites cover:
 
@@ -1275,6 +1325,12 @@ What the suites cover:
 | `MultiImage.test.ts` | text + N image parts, the 8-image cap, old single-image messages |
 | `Memory.test.ts` | dedupe across case/punctuation, ranked search (incl. “wifi” → “Wi-Fi”), update/delete, clear |
 | `Schedule.test.ts` | every supported phrasing, cron maths, next-run rollover, storage round-trip |
+| `AutomationBridge.test.ts` | the bridge is inert when the module is absent, param clamping, event unsubscribe on unmount |
+| `AutomationTools.test.ts` | all 13 tools: validation before the phone is touched, envelopes, `no_visible_change` ≠ success, confirmation round-trip, stop |
+| `AutomationBar.test.tsx` | the live bar renders app/action/count and hides when idle |
+| `ChatScroll.test.ts` | the list follows new messages only when you are already at the bottom (the long-chat scroll-up bug) |
+| `PinLock.test.ts` | SHA-256 against the published FIPS vectors, PIN never stored, freshness of salt, wrong-PIN and cool-down rules |
+| `Backup.test.ts` | what a backup contains, no secrets when keys are off, the lock never travels, restore puts settings/notes/jobs back, newest ten kept, auto-backup throttle |
 
 `Schedule.test.ts` runs against a frozen clock (Sunday 25 Oct 2026, 06:30), so
 “next Monday at 9pm” is an assertion, not a coin flip.
@@ -1536,6 +1592,12 @@ write never throws.
 
 Nothing is requested at launch that isn't needed to show a chat screen.
 
+Action Mode adds **no new runtime permission**. It needs Android's
+`BIND_ACCESSIBILITY_SERVICE`, which is not a permission the app can grant
+itself: you switch it on in Settings › Accessibility, and the app can only read
+whether you did (§21). It also reuses `POST_NOTIFICATIONS` for the ongoing
+"Action Mode is running" card.
+
 Two features deliberately need **no** permission: sharing into AmitAI (the intent
 carries its own one-shot grant) and reading the clipboard (allowed for the app in
 the foreground, and only when you ask a question that needs it).
@@ -1546,6 +1608,7 @@ the foreground, and only when you ask a question that needs it).
 
 | Version | Code | Size | Highlights |
 |---|---|---|---|
+| 4.4 | 22 | 223 MB | **backup & restore** of settings/keys/memory/schedules (auto on background, newest 10 kept) · **app lock** — salted-hash PIN, cool-down, optional FLAG_SECURE · **↑/↓ jump buttons** in the chat, and the long-chat scroll-up bug fixed |
 | 4.2 | 20 | 223 MB | **Puter as a 6th provider** (no key, no card, own free allowance) · **vector app icon + splash** (adaptive, Android 13 monochrome, Android 12 system splash) · reply timing footer that never invents a speed |
 | 4.1 | 14 | 223 MB | **on-device local model** — `llama-server` in Termux, no key, no network |
 | 4.0 | 13 | 223 MB | **offline neural voices** — Piper + KittenTTS via sherpa-onnx, audio-synced transcript, voice HUD |
@@ -1901,8 +1964,233 @@ Termux $ opencode
 ```
 
 That is the whole app: **chat, vision, web, memory, history, schedules, voice,
-wake word, bubble, sharing, clipboard, providers, usage, storage, themes and the
-opencode MCP bridge** — all on the phone, with no server and no account.
+wake word, bubble, sharing, clipboard, providers, usage, storage, themes, the
+opencode MCP bridge, Action Mode, backups and an app lock** — all on the phone,
+with no server and no account.
+
+---
+
+## 22. Backup, app lock and the jump buttons
+
+### In plain words
+
+Three small things that each fix a real annoyance:
+
+1. **A backup button**, because a reinstall used to cost you your keys and
+   settings. Chats were always safe on the SD card; the *configuration* was not.
+2. **A PIN**, because the app now holds your keys, your notes and a hand that
+   can tap on your screen.
+3. **↑ / ↓ buttons in the chat**, because a 200-message thread should not
+   require five hundred flicks.
+
+### What a backup contains
+
+| Inside | Why |
+|---|---|
+| Settings (provider, model, temperature, every tool toggle, theme) | the stuff you re-enter by hand after a reinstall |
+| API keys and tokens — **only if you ask** | so you can restore a working phone from one file |
+| Memory notes | they live in app-private storage too |
+| Scheduled jobs | and the alarms are re-armed on restore, so they actually fire |
+| Counts of what is inside | a quick sanity check before restoring |
+
+Conversations are **not** in the file: they already live in
+`conversations.json` and survive an uninstall on their own.
+
+Files land in `AmitAI/backup/` next to the chats, newest **ten** kept:
+
+```
+$ adb shell ls -la /sdcard/AmitAI/backup/
+amitai-2026-11-13-215030.json     18 KB
+amitai-2026-11-13-204512.json     18 KB
+```
+
+They are plain JSON on purpose — you can read one, diff two, or delete them with
+any file manager. That also means: **if you turn on "include API keys", the file
+is a password.** Treat it like one.
+
+Restore merges settings over the current ones (so an old backup cannot blank a
+field added since), replaces the notes and jobs, and leaves the app lock alone.
+
+### Auto-backup
+
+Off by default is wrong for this app, so it is **on** by default: whenever
+AmitAI goes to the background it writes a backup — at most once every ten
+minutes, and only when something actually changed. A chatty afternoon cannot
+fill the folder.
+
+### The app lock
+
+| | |
+|---|---|
+| When it asks | at cold start, and after **one minute** in the background |
+| What it stores | `sha256(salt:pin)` — the PIN itself never touches storage |
+| Salt | fresh random 32 hex chars per PIN, so two people with `4821` do not share a hash |
+| Wrong tries | counter, five in a row ⇒ 30-second cool-down |
+| Rejects | all-same digits (`1111`) and runs (`1234`, `9876`) |
+| Blocks screenshots | optional `FLAG_SECURE`: black screenshots, blank recents thumbnail |
+
+Said honestly: a 4–8 digit PIN is a speed bump, not encryption. It stops the
+person who picks up your unlocked phone. Anything stronger is Android's job, and
+the app already keeps everything in its private sandbox.
+
+### The jump buttons
+
+Only appear when they are useful:
+
+```
+        ┌─────────────────────┐
+        │  ↑   older messages │   ← only when you are not at the top
+        │                     │
+        │  ↓   newest message │   ← only when you are not at the bottom
+        └─────────────────────┘
+```
+
+They exist because the list no longer yanks you to the bottom: once following
+became conditional (see §21's neighbour, `src/lib/chatScroll.ts`), going back had
+to be one tap.
+
+---
+
+## 21. Action Mode
+
+### In plain words
+
+Until now AmitAI could only *talk*. It could tell you how to find a song, but
+your thumb still had to do the work. **Action Mode gives it a hand.**
+
+Think of a person sitting next to you with your phone: they can see the screen,
+tap a button, type in a box, scroll, press back — but only while you are watching
+them, and they stop instantly if you say stop. That person is Android's
+**accessibility service**, the same mechanism screen readers use. It is not
+screenshot-guessing: it reads the real UI tree, so it knows a button *is* a
+button named "Search" instead of guessing a pixel.
+
+Android will not let an app do that quietly. **You** enable it, in Settings. The
+app can never enable it for you, and it never fakes a tap on a permission
+dialog.
+
+### The one picture that explains it
+
+```
+  your words                      the model                   the phone
+ ─────────────                   ──────────                  ───────────
+ "open YouTube and      ──────▶  open_app("com.google…")  ──▶  Intent
+  search Tera Fitoor"
+                                 get_screen_content()     ──▶  read the real
+                                                                 accessibility tree
+                                 find_element("Search")   ──▶  is it there?
+                                 tap_element("Search")    ──▶  real click
+                                 type_text("Tera Fitoor…")──▶  real keyboard input
+                                 get_screen_content()     ──▶  did the screen
+                                                                 actually change?
+                                        │
+                                        └── no change ⇒ failed, never "success"
+```
+
+That last arrow is the whole design: **every action is verified against the
+screen afterwards.** A tap that did nothing is reported as `no_visible_change`,
+not as a win. Three misses in a row and the session stops on its own.
+
+### Turning it on
+
+1. Drawer → **Action Mode**, or the hand icon in the header.
+2. Read the disclosure, tap **Enable** → Android Settings opens.
+3. Enable **AmitAI Action Mode** (the app cannot do this step), come back.
+4. The card reads `Enabled and connected`. Now switch **Action Mode** on.
+
+An ongoing notification appears with **Stop** on it, and it stays for as long as
+the session lives. That notification is not decoration — it is the emergency
+stop, and it works even if the app's own UI is buried under another app.
+
+### The 13 tools
+
+Registered next to the existing twelve, so the model calls them the same way.
+
+| Tool | What it actually does |
+|---|---|
+| `open_app(package_name)` | `Intent` with `CATEGORY_LAUNCHER`; waits for the window to change |
+| `get_foreground_app()` | current package + label |
+| `list_installed_apps()` | launcher-visible apps only (no hidden system packages) |
+| `get_screen_content()` | the readable tree: text, content descriptions, clickable flags |
+| `find_element(text, content_description)` | exact-then-contains, case/space normalised |
+| `get_clickable_elements()` | every node that can actually be tapped right now |
+| `tap_element(text, content_description)` | click, then verify the screen moved |
+| `type_text(text)` | into the focused editable node; `ACTION_SET_TEXT` first |
+| `scroll_screen(direction)` | `up` / `down` / `left` / `right`, then verify |
+| `press_back()` | global back, then verify |
+| `get_automation_status()` | enabled? active? step 7 of 40? last error? |
+| `stop_automation()` | the same brake as the notification |
+| `request_user_confirmation(action_description)` | blocks until you tap Yes or No |
+
+Every one returns the same envelope — no exceptions, no prose to parse:
+
+```json
+{
+  "ok": false,
+  "status": "failed",
+  "error_code": "element_not_found",
+  "message": "No node matching \"Search\" on com.google.android.youtube",
+  "app": "com.google.android.youtube",
+  "step": 4,
+  "elapsed_ms": 812
+}
+```
+
+### Safety: the rules that are not the model's decision
+
+These live in `AutomationPolicy.kt` and run **before** an action, not after. The
+model cannot argue its way past them, and it never sees a password.
+
+| Situation | What happens |
+|---|---|
+| Password field (`isPassword = true`) | never read, never typed into. Only the flag is visible, never the characters |
+| OTP / PIN / CVV / 2FA / card screen | session stopped, `sensitive_screen` |
+| Banking, UPI, wallet, trading package | session stopped before the first tap |
+| Android permission dialog | never touched — "Allow" is a human's answer |
+| Send / Pay / Buy / Delete / Uninstall / Log out | needs a fresh confirmation, one tap per yes, expires in 120 s |
+| Repeated failure | 3 misses in a row ⇒ stop |
+| Long sessions | 40 actions per session ⇒ stop with a clear message |
+
+Banking, payments and file deletion are **not** things Action Mode will do for
+you, on purpose. It can open WhatsApp and type a message; it will stop and ask
+before sending it.
+
+### What it looks like
+
+- **Action Mode screen** — disclosure, grant state, the master toggle, the
+  session counters and the history of every step with its status.
+- **AutomationBar** — a thin live strip above the composer: app name, current
+  action, `7 / 40`, progress bar, **Stop**. It disappears when idle.
+- **ConfirmActionDialog** — one sentence, one action, Yes/No. No "don't ask
+  again".
+
+All three use `theme.ts` tokens only, so Midnight OLED, Tokyo Night and Cyber
+Obsidian all work without a single new colour.
+
+### Honest limits
+
+| Limit | Why |
+|---|---|
+| Flutter / Unity / games report almost nothing | they draw their own pixels, so the accessibility tree is one big unlabelled node |
+| A badly labelled button can still be mis-tapped | this is why every tap is verified and every step is visible |
+| Some apps mark views `importantForAccessibility="no"` | invisible to any accessibility service, including TalkBack |
+| The screen must be awake and unlocked | no wake locks, no unlocking |
+| Play Store treats this as a restricted use | see `docs/ACTION_MODE.md` — personal/debug builds only until it is declared |
+
+### Where the code is
+
+| Layer | File |
+|---|---|
+| Service | `android/.../automation/AmitAccessibilityService.kt` |
+| Engine (observe → act → verify) | `automation/AutomationManager.kt` |
+| Tree reading | `automation/AccessibilityNodeHelper.kt` |
+| Safety rules | `automation/AutomationPolicy.kt` |
+| Session state + history | `automation/AutomationState.kt` |
+| Foreground service + Stop card | `automation/AutomationService.kt` |
+| RN bridge | `automation/AmitAutomationModule.kt` |
+| JS bridge + tools | `src/lib/automation.ts`, `src/lib/automationTools.ts` |
+| UI | `src/screens/ActionModeScreen.tsx`, `AutomationBar`, `ConfirmActionDialog` |
+| Long-form notes + Play policy | [`docs/ACTION_MODE.md`](docs/ACTION_MODE.md) |
 
 ---
 

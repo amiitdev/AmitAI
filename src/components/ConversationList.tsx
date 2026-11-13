@@ -18,6 +18,7 @@ interface Props {
   onSettings: () => void;
   onSchedules: () => void;
   onMemory: () => void;
+  onActionMode: () => void;
 }
 
 function ago(ts: number): string {
@@ -41,6 +42,7 @@ export function ConversationList({
   onSettings,
   onSchedules,
   onMemory,
+  onActionMode,
 }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -152,6 +154,10 @@ export function ConversationList({
         <TouchableOpacity style={styles.footBtn} onPress={onMemory}>
           <Ionicons name="bulb-outline" size={20} color={colors.textDim} />
           <Text style={styles.footLabel}>Memory</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.footBtn} onPress={onActionMode}>
+          <Ionicons name="hand-left-outline" size={20} color={colors.textDim} />
+          <Text style={styles.footLabel}>Action</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.footBtn} onPress={onSettings}>
           <Ionicons name="settings-outline" size={20} color={colors.textDim} />
