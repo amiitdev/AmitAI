@@ -374,6 +374,21 @@ function AppInner() {
     [conversations, activeId],
   );
 
+  /**
+   * Follow a reply while it is being written.
+   *
+   * `onContentSizeChange` only fires when the list re-measures, which lags
+   * behind a fast token stream - so the newest line sat below the fold. This
+   * nudges the list on every content change, but only while the reader is
+   * still parked at the bottom.
+   */
+  const streamLen = active?.messages[active.messages.length - 1]?.content.length ?? 0;
+  useEffect(() => {
+    if (!streaming || !atBottom.current) return;
+    const id = setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 40);
+    return () => clearTimeout(id);
+  }, [streaming, streamLen]);
+
   const patchSettings = useCallback(
     (patch: Partial<Settings>) => {
       setSettings(prev => {

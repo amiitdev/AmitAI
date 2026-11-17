@@ -12,6 +12,8 @@ import {
 import { Message } from '../types';
 import { useTheme, ThemeColors, font, radius, space } from '../theme';
 import { Markdown } from './Markdown';
+import { AgentSteps } from './AgentSteps';
+import { splitAgentSteps } from '../lib/agentSteps';
 import Ionicons from '@react-native-vector-icons/ionicons';
 import { copyText } from '../lib/native';
 import { useSpeech } from '../lib/speech';
@@ -142,7 +144,26 @@ export function Bubble({ message, onRegenerate, canRegenerate }: Props) {
             {message.content}
           </Text>
         ) : (
-          <Markdown source={message.content} caret={!!message.streaming} />
+          (() => {
+            const segments = splitAgentSteps(message.content);
+            return segments.map((seg, i) =>
+              seg.kind === 'steps' ? (
+                <AgentSteps key={`steps-${i}`} steps={seg.steps} />
+              ) : segments[i + 1]?.kind === 'steps' ? (
+                // Prose that precedes a tool run is the model thinking aloud;
+                // it stays visible but quieter than the answer.
+                <Text key={`text-${i}`} style={styles.narration}>
+                  {seg.text}
+                </Text>
+              ) : (
+                <Markdown
+                  key={`text-${i}`}
+                  source={seg.text}
+                  caret={!!message.streaming && i === segments.length - 1}
+                />
+              ),
+            );
+          })()
         )}
 
         {/* The live meter under a half-written answer. */}
@@ -239,6 +260,12 @@ const createStyles = (colors: ThemeColors) =>
     textTransform: 'uppercase',
   },
   userText: { ...font.body },
+  narration: {
+    color: colors.textDim,
+    fontSize: 13,
+    lineHeight: 19,
+    marginBottom: space(1.5),
+  },
   images: { flexDirection: 'row', flexWrap: 'wrap', gap: space(1.5), marginBottom: space(2) },
   attached: {
     width: 116,
