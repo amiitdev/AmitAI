@@ -110,4 +110,32 @@ describe('Markdown · table rendering', () => {
     expect(text).toContain('Speed');
     await ReactTestRenderer.act(async () => tree.unmount());
   });
+
+  test('three columns stack each row instead of squeezing into slivers', async () => {
+    let tree!: ReactTestRenderer.ReactTestRenderer;
+    await ReactTestRenderer.act(async () => {
+      tree = ReactTestRenderer.create(<Markdown source={TABLE} />);
+    });
+    const occurrences = (hay: string, needle: string) => hay.split(needle).length - 1;
+    const text = allText(tree);
+    // In a grid each column header is printed once; stacked, every header
+    // repeats as the key of each row — one per data row here.
+    expect(occurrences(text, 'TCP')).toBe(3);
+    expect(occurrences(text, 'UDP')).toBe(3);
+    // The first column's header survives as the caption above the stack.
+    expect(text).toContain('Feature');
+    await ReactTestRenderer.act(async () => tree.unmount());
+  });
+
+  test('two columns keep the side-by-side grid', async () => {
+    const doc = '| Key | Value |\n| --- | --- |\n| colour | indigo |';
+    let tree!: ReactTestRenderer.ReactTestRenderer;
+    await ReactTestRenderer.act(async () => {
+      tree = ReactTestRenderer.create(<Markdown source={doc} />);
+    });
+    const text = allText(tree);
+    expect(text.split('Key').length - 1).toBe(1);
+    expect(text).toContain('indigo');
+    await ReactTestRenderer.act(async () => tree.unmount());
+  });
 });

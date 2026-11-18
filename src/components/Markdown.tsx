@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, Linking, Platform, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Linking, Platform } from 'react-native';
 import { colors, mono, radius, space } from '../theme';
 import { CodeBlock } from './CodeBlock';
 
@@ -56,6 +56,32 @@ const alignmentOf = (cell: string): Align => {
   return l && r ? 'center' : r ? 'right' : 'left';
 };
 
+const CODE_START =
+  /^(#|\/\/|def |class |import |from |for |while |if |elif |else\b|try\b|except\b|finally\b|with |return\b|print\(|await |async |const |let |var |func |package |public |private |interface |SELECT\b|INSERT\b)/;
+
+const CODE_SYM = /[=;{}]|->|=>/;
+
+/** A run of lines that are statements, not sentences. */
+export function looksLikeCode(lines: string[]): boolean {
+  const real = lines.filter(l => l.trim());
+  if (!real.length) return false;
+  if (real.length === 1) {
+    const t = real[0].trim();
+    // Only unmistakable one-liners, so a stray prose line is never fenced.
+    return (
+      /^(print\(|console\.log\(|def |class |import |from |return |const |let |var |#|\/\/)/.test(t) ||
+      /^[\w.[\]"']+\s*=\s*[^=]/.test(t)
+    );
+  }
+  let hits = 0;
+  for (const raw of real) {
+    const t = raw.trim();
+    const prose = /[.!?]$/.test(t) && !CODE_SYM.test(t);
+    if (!prose && (CODE_START.test(t) || CODE_SYM.test(t))) hits++;
+  }
+  return hits / real.length >= 0.7;
+}
+
 export function parseMarkdown(src: string): Block[] {
   const lines = src.replace(/\r\n/g, '\n').split('\n');
   const blocks: Block[] = [];
@@ -102,12 +128,15 @@ export function parseMarkdown(src: string): Block[] {
         rows.push(splitRow(lines[i]));
         i++;
       }
-      // normalise every row to the header width so rendering stays aligned
-      const width = header.length;
+      let width = header.length;
+      const h2 = header.map(c => c.trim());
+      const r2 = rows.map(r => r.map(c => c.trim()));
+      // A stray trailing pipe leaves a blank column; drop it.
+      while (width > 1 && !h2[width - 1] && r2.every(r => !(r[width - 1] ?? ''))) width--;
       blocks.push({
         kind: 'table',
-        header,
-        rows: rows.map(r => Array.from({ length: width }, (_, c) => r[c] ?? '')),
+        header: h2.slice(0, width),
+        rows: r2.map(r => Array.from({ length: width }, (_, c) => r[c] ?? '')),
         align: Array.from({ length: width }, (_, c) => align[c] ?? 'left'),
       });
       continue;
@@ -155,12 +184,16 @@ export function parseMarkdown(src: string): Block[] {
       lines[i].trim() &&
       !/^\s*(```|#{1,4}\s|[-*+]\s|\d+[.)]\s|>|---|\|)/.test(lines[i])
     ) {
-      buf.push(lines[i].trim());
+      buf.push(lines[i]);
       i++;
     }
     // Single newlines are soft breaks in markdown; collapsing them also lets
     // **bold** spans survive a model that wraps mid-phrase.
-    blocks.push({ kind: 'para', text: buf.join(' ') });
+    blocks.push(
+      looksLikeCode(buf) && buf.join('').trim()
+        ? { kind: 'code', lang: '', text: buf.join('\n').trimEnd() }
+        : { kind: 'para', text: buf.map(l => l.trim()).join(' ') },
+    );
   }
 
   return blocks;
@@ -279,8 +312,8 @@ export function Markdown({ source, caret }: { source: string; caret?: boolean })
 }
 
 /**
- * Tables scroll horizontally instead of squeezing: comparison answers are
- * usually 3+ columns and wrapping them into slivers is worse than scrolling.
+ * Two-column tables use a weighted grid; three or more columns stack, because a
+ * phone cannot show four slivers of text without a zig-zag of wrapped words.
  */
 function Table({
   header,
@@ -296,53 +329,84 @@ function Table({
    * happily put whole sentences in a cell, and an unclamped 240dp column meant a
    * three-column table showed barely one column per screen.
    */
-  const widths = React.useMemo(
+  const weights = React.useMemo(
     () =>
       header.map((h, c) => {
         const longest = Math.max(h.length, ...rows.map(r => (r[c] ?? '').length));
-        return Math.min(148, Math.max(74, Math.round(longest * 6.4) + 22));
+        return Math.max(5, Math.min(26, longest));
       }),
     [header, rows],
   );
 
+  // Three or more columns cannot fit a phone as columns: stack each row into a
+  // label + key/value lines instead of squeezing into a zig-zag grid.
+  if (header.length > 2 && rows.length) {
+    return (
+      <View style={styles.tableWrap}>
+        {!!header[0] && (
+          <View style={styles.stackHead}>
+            <Text style={styles.thText} numberOfLines={1}>
+              {header[0]}
+            </Text>
+          </View>
+        )}
+        {rows.map((row, r) => (
+          <View
+            key={r}
+            style={[
+              styles.stackRow,
+              r % 2 === 1 && styles.tableRowAlt,
+              r < rows.length - 1 && styles.stackRowDivider,
+            ]}
+          >
+            <Inline text={row[0] || header[0]} base={[styles.thText]} />
+            {header.slice(1).map((h, c) => (
+              <View key={c} style={styles.stackLine}>
+                <Text style={styles.stackKey} numberOfLines={1}>
+                  {h}
+                </Text>
+                <View style={styles.stackVal}>
+                  <Inline text={row[c + 1] ?? ''} base={[styles.tdText]} />
+                </View>
+              </View>
+            ))}
+          </View>
+        ))}
+      </View>
+    );
+  }
+
   const cellStyle = (c: number, isHead: boolean) => [
     styles.td,
-    { width: widths[c] },
+    { flex: weights[c], minWidth: 0 },
     c < header.length - 1 && styles.tdDivider,
     isHead ? styles.th : null,
   ];
 
   return (
     <View style={styles.tableWrap}>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-        <View>
-          <View style={styles.tableRow}>
-            {header.map((cell, c) => (
-              <View key={c} style={cellStyle(c, true)}>
-                <Inline
-                  text={cell}
-                  base={[styles.thText, { textAlign: align[c] ?? 'left' }]}
-                />
-              </View>
-            ))}
+      <View style={styles.tableRow}>
+        {header.map((cell, c) => (
+          <View key={c} style={cellStyle(c, true)}>
+            <Inline
+              text={cell}
+              base={[styles.thText, { textAlign: align[c] ?? 'left' }]}
+            />
           </View>
-          {rows.map((row, r) => (
-            <View
-              key={r}
-              style={[styles.tableRow, r % 2 === 1 && styles.tableRowAlt]}
-            >
-              {row.map((cell, c) => (
-                <View key={c} style={cellStyle(c, false)}>
-                  <Inline
-                    text={cell}
-                    base={[styles.tdText, { textAlign: align[c] ?? 'left' }]}
-                  />
-                </View>
-              ))}
+        ))}
+      </View>
+      {rows.map((row, r) => (
+        <View key={r} style={[styles.tableRow, r % 2 === 1 && styles.tableRowAlt]}>
+          {row.map((cell, c) => (
+            <View key={c} style={cellStyle(c, false)}>
+              <Inline
+                text={cell}
+                base={[styles.tdText, { textAlign: align[c] ?? 'left' }]}
+              />
             </View>
           ))}
         </View>
-      </ScrollView>
+      ))}
     </View>
   );
 }
@@ -358,6 +422,30 @@ const styles = StyleSheet.create({
   },
   tableRow: { flexDirection: 'row', alignItems: 'stretch' },
   tableRowAlt: { backgroundColor: colors.bgRaised },
+  stackRow: {
+    paddingHorizontal: space(2),
+    paddingVertical: space(1.75),
+    gap: space(0.75),
+  },
+  stackRowDivider: { borderBottomWidth: 1, borderBottomColor: colors.border },
+  stackHead: {
+    paddingHorizontal: space(2),
+    paddingVertical: space(1.25),
+    backgroundColor: colors.bgInput,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  stackLine: { flexDirection: 'row', alignItems: 'flex-start', gap: space(1.5) },
+  stackVal: { flex: 1 },
+  stackKey: {
+    width: 92,
+    color: colors.textFaint,
+    fontSize: 11,
+    lineHeight: 17,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    paddingTop: 1,
+  },
   td: { paddingHorizontal: space(2), paddingVertical: space(1.75), justifyContent: 'center' },
   tdDivider: { borderRightWidth: 1, borderRightColor: colors.border },
   th: { backgroundColor: colors.bgInput, borderBottomWidth: 1, borderBottomColor: colors.border },

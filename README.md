@@ -102,6 +102,7 @@ the model runs on the phone's own CPU/GPU. See §13.
 20. [Everything AmitAI can do — with examples](#20-everything-amitai-can-do--with-examples)
 21. [Action Mode](#21-action-mode)
 22. [Backup, app lock and the jump buttons](#22-backup-app-lock-and-the-jump-buttons)
+23. [Documents on the SD card](#23-documents-on-the-sd-card)
 
 ---
 
@@ -335,6 +336,29 @@ The brain stays opencode's; AmitAI supplies only the facts and the writes. Ask t
 agent *“remember my bike service is in December”* and the note appears in the
 app's Memory tab. Next session, *“when is my bike service?”* calls `recall` and
 the agent answers **December** — across sessions, which plain opencode cannot do.
+
+### 📄 Your own documents (bridge-side)
+
+Ask about a document on the phone and the agent greps it. Runs in Termux, in the
+bridge's agent — **no APK change**, nothing in `src/` involved.
+
+| Piece | Detail |
+|---|---|
+| Index | 338 documents → 28 MB of plain text in `~/.local/share/docindex/text` |
+| Covered | PDF (incl. OCR of English scans), docx, md, txt, csv |
+| Search | `pdftotext` once, then `rg` per question — no embeddings, nothing uploaded but the matched lines |
+| Honesty | answers cite the file; unreadable scans are reported, never guessed |
+| Scope | **AmitAI Bridge provider only** — it is the agent that does the reading |
+| Install | `pkg install poppler` + `~/docindex.sh`, then a 28-line prompt block in `server.mjs` |
+
+```
+you   what was my vitamin D in the last lab report?
+      - bash  rg -il "vitamin d" ~/.local/share/docindex/text          ✓
+      - bash  rg -i -C2 "25-OH Vitamin D" …/Abnormal Diagnostic Report Summary.pdf.txt   ✓
+      6.13 ng/mL — reference 30.0–100.0, flagged "High Deficiency (Severe Low)".
+```
+
+Full detail, measured numbers and rollback: [`docs/DOCUMENTS.md`](docs/DOCUMENTS.md).
 
 ### 🎙 Voice
 
@@ -1634,6 +1658,10 @@ libraries for **all four ABIs** (`arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64`).
 and the Piper + Kitten models (78 MB). An arm64-only build would shed roughly
 35–40 MB; moving the voices to a first-run download would shed most of the rest.
 
+> **Documents (§23) ship outside the APK.** The document library lives in Termux —
+> an extractor script plus a prompt block in the bridge — so **4.4 stays the
+> newest binary**; there is no build to install for it.
+
 ---
 
 ## 17. Known limits and roadmap
@@ -1657,6 +1685,9 @@ and the Piper + Kitten models (78 MB). An arm64-only build would shed roughly
 | MCP exposes 5 of the 13 tools | clipboard, alarms and the UI need app-side context/presence | expose more once a safe remote-trigger exists |
 | MCP needs the app installed and the service on | the socket lives in the app process | nothing to do — that is the design |
 | An agent call cannot wake a stopped app | Android will not let a socket resurrect a killed process | the foreground service is the supported answer (done in 3.9) |
+| Document search works on the AmitAI Bridge provider only | the reading happens in the opencode agent in Termux, not in the app | in-app Kotlin scanner + SQLite FTS5 + a `search_docs` tool, for every provider |
+| Scanned Hindi forms are not readable | `tesseract` here ships `eng` traineddata only, and junk OCR creates false hits | add `hin.traineddata` to `$PREFIX/share/tessdata`, then `./docindex.sh --ocr <file>` |
+| The document index is refreshed by hand | `crond` is down on this phone, and starting it would also fire the WhatsApp backup job | re-run `~/docindex.sh` (~40 s when cached) |
 | No iOS build | Android-native bridges (Vosk, overlay, alarms) | port with platform modules |
 
 ---
@@ -2191,6 +2222,96 @@ Obsidian all work without a single new colour.
 | JS bridge + tools | `src/lib/automation.ts`, `src/lib/automationTools.ts` |
 | UI | `src/screens/ActionModeScreen.tsx`, `AutomationBar`, `ConfirmActionDialog` |
 | Long-form notes + Play policy | [`docs/ACTION_MODE.md`](docs/ACTION_MODE.md) |
+
+---
+
+## 23. Documents on the SD card
+
+AmitAI can answer from your own files — lab reports, invoices, rent agreements,
+certificates, notes — by letting the **bridge's agent** search a plain-text copy
+of them. Nothing in the app changed to make this work, and no APK accompanies it.
+
+```
+ AmitAI app ──HTTP──▶ opencode-bridge :8130 ──▶ opencode :4610 ──▶ /storage/emulated/0
+ (unchanged)          +28 lines: a prompt      (agent: rg, read)     read only
+                       block describing    │
+                       the library         ▼
+                                    ~/.local/share/docindex/text
+                                    338 extracted .txt files, 28 MB
+```
+
+### What it answers
+
+| Asked | Answered from | Type |
+|---|---|---|
+| *what was my vitamin D in the last lab report?* | `6.13 ng/mL`, ref 30–100, 02 Nov 2026 | digital PDF |
+| *when did I buy the device with IMEI 3572696…?* | 29-10-2024, CLOUDSTORE RETAIL, ₹12,999 | invoice PDF |
+| *what does my rent agreement say about the deposit?* | quoted Clause 6, flagged the blank placeholders | contract PDF |
+| *what is my vehicle registration number?* | `BRO1CQ$478`, 12-Nov-2015 | **OCR'd scan** |
+
+Ask something the library cannot answer and it says so — *"the only rental
+document is a blank template … I found no messages from your landlord"* — instead
+of inventing one.
+
+### How the index is built
+
+`~/docindex.sh` walks `ORGANIZED/documents` and `Download`, and for each file
+writes a mirrored `.txt` into `~/.local/share/docindex/text`:
+
+| Type | Method |
+|---|---|
+| PDF | `pdftotext -layout` (page layout kept, tables stay readable) |
+| PDF with no text layer | `pdftoppm -r 150 -png` → `tesseract`, opt-in per file |
+| docx | `unzip -p … word/document.xml`, tags stripped — no `pandoc` |
+| md / txt / csv | copied as-is |
+
+Two guards, both learned from real files on this phone: anything under **40
+non-whitespace characters** is a scan, not text (`pdf2text` happily returns
+`Scanned by CamScanner`), and OCR output that is more than **15 % non-Latin** is
+deleted rather than indexed — junk OCR creates false search hits, which is worse
+than a document that is honestly missing. Both are listed in `_failed.log`.
+
+### The prompt block
+
+`docsBlock()` in `server.mjs` reads `_manifest.txt` on **every** request and
+prepends a short `[DOCUMENTS]` note: where the index is, the two `rg` commands to
+run, quote-the-file rule, read-only rule, and what `_failed.log` means. If the
+manifest is missing it returns `''`, and the prompt is byte-for-byte what the
+bridge sent before this feature existed.
+
+### Measured here
+
+```
+372 files scanned → 338 indexed  (203 pdf · 112 md · 16 txt · 5 docx · 1 csv · 1 MD)
+                    34 without text (Hindi scans, eng-only tesseract)
+                    28 MB of text
+cached pass       → ~40 s, 338 unchanged
+first pass        → ~6 min
+OCR               → ~25 s/page at 150 dpi
+```
+
+### Commands
+
+```bash
+./docindex.sh                            # refresh (skips unchanged files)
+./docindex.sh --stats                    # counts, size, manifest
+./docindex.sh --ocr "path/to/scan.pdf"   # OCR one file, reject non-Latin junk
+DO_OCR=1 ./docindex.sh                   # OCR every scan (slow)
+```
+
+### Honest limits
+
+| Limit | Why |
+|---|---|
+| Only on the **AmitAI Bridge** provider | the reading happens in opencode/Termux; Gemini and OpenAI never see the bridge |
+| 34 scans stay unreadable | `tesseract` has `eng` only; junk OCR is rejected on purpose |
+| Manual refresh | `crond` is down here, and starting it would fire the WhatsApp backup job |
+| Keyword search, not meaning | 338 documents greppable in milliseconds; embeddings would add cost for little gain at this size |
+| Slower than chat | the agent runs 1–3 greps, and the bridge caps a turn at 180 s |
+
+The originals are never written to; only the matched lines reach the model, the
+same as web-page reading. Full detail, troubleshooting and rollback:
+[`docs/DOCUMENTS.md`](docs/DOCUMENTS.md).
 
 ---
 
