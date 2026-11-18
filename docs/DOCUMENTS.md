@@ -40,17 +40,17 @@ so they render as a normal Markdown list. Whole exchange: two greps.
                                                        │
                                                        ▼
                                         ~/.local/share/docindex/text
-                                        338 extracted plain-text files
+                                        356 extracted plain-text files
 ```
 
 | Piece | Path | State |
 |---|---|---|
 | Text extractor | `~/docindex.sh` | new |
 | OCR quality filter | `~/ocrclean.py` | new, one-off |
-| The index | `~/.local/share/docindex/text/` | 28 MB, 338 files |
+| The index | `~/.local/share/docindex/text/` | 28 MB, 356 files |
 | Prompt injection | `~/opencode-bridge/server.mjs` | +28 lines |
 | `pdftotext` / `pdftoppm` | Termux `poppler` 26.11.0 | installed |
-| `tesseract` | Termux | already present (`eng` only) |
+| `tesseract` | Termux | `eng` bundled + `hin` added, 1.1 MB |
 
 **Why not in the app?** Because the app never reads those files — the agent does.
 The index is the only portable part, and it is a plain directory of `.txt`, so it
@@ -64,9 +64,14 @@ the way to make it universal; see *Limits*.
 ## Install (already done on this phone)
 
 ```bash
-pkg install poppler              # pdftotext + pdftoppm
-./docindex.sh                    # build / refresh the index
+pkg install poppler                       # pdftotext + pdftoppm
+curl -o $PREFIX/share/tessdata/hin.traineddata \
+  https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main/hin.traineddata
+./docindex.sh                             # build / refresh the index
 ```
+
+`hin.traineddata` (1.1 MB) is what makes scanned Hindi forms readable; without it
+those files are reported as unreadable instead of being OCR'd into junk.
 
 `server.mjs` addition — a prompt block, nothing else is touched:
 
@@ -94,7 +99,7 @@ and a missing manifest degrades to the exact prompt the bridge used before.
 | Type | Method | Notes |
 |---|---|---|
 | `.pdf` | `pdftotext -layout` | page layout preserved, so tables stay readable |
-| `.pdf` with no text layer | `pdftoppm -r 150 -png` → `tesseract` | opt-in, per file or `DO_OCR=1` |
+| `.pdf` with no text layer | `pdftoppm -r 150 -png` → `tesseract -l eng+hin` | opt-in, per file or `DO_OCR=1` |
 | `.docx` | `unzip -p … word/document.xml` → strip tags | no `pandoc` needed |
 | `.md .txt .csv` | copied as-is | already text |
 | images, `.doc`, `.xls` | not indexed | out of scope for now |
@@ -107,22 +112,24 @@ Two safety nets, both learned from real files here:
 - **A scan is not text.** `pdftotext` happily emits `Scanned by CamScanner` and
   calls it a day. Anything under **40 non-whitespace characters** is treated as
   empty and listed in `_failed.log` instead of indexed.
-- **Junk OCR is worse than nothing.** Tesseract here ships `eng` only, so scanned
-  Hindi forms produce character soup like `(a)ém@mﬁmﬁmmﬁmm:ﬁa?ﬁmﬁémﬁaa`, which
-  creates *false* search hits. Output that is more than **15 % non-Latin
-  characters** is deleted and reported as still needing text.
+- **Junk OCR is worse than nothing.** OCR only helps when it produced the
+  expected script, so output is accepted only if it is ASCII or **Devanagari**
+  (`U+0900–U+097F`). Reading a Hindi form with `eng` alone gives character soup
+  like `(a)ém@mﬁmﬁmmﬁmm:ﬁa?ﬁmﬁémﬁaa`, which creates *false* search hits — more
+  than **15 % unrecognised characters** and the file is deleted and reported as
+  still needing text. Hindi scans are read with `-l eng+hin`.
 
 ---
 
 ## Measured on this phone (iQOO I2305)
 
 ```
-372 files scanned   →  338 indexed  (203 pdf · 112 md · 16 txt · 5 docx · 1 csv · 1 MD)
-                      34 without text (Hindi scans, tesseract has eng only)
+372 files scanned   →  356 indexed  (221 pdf · 112 md · 16 txt · 5 docx · 1 csv · 1 MD)
+                      16 without text (handwritten, password-protected)
                       28 MB of plain text
-full pass (cached)  →  ~40 s, 338 unchanged, nothing re-extracted
+full pass (cached)  →  ~40 s, 356 unchanged, nothing re-extracted
 first full pass     →  ~6 min (325 documents)
-OCR                 →  ~60 s/page at 200 dpi, ~25 s/page at 150 dpi
+OCR                 →  ~25 s/page at 150 dpi, eng+hin
 ```
 
 Verified answers, each from a different document type:
@@ -133,6 +140,7 @@ Verified answers, each from a different document type:
 | device with IMEI 357269623177888 | 29-10-2024, CLOUDSTORE RETAIL, ₹12,999 | tax invoice PDF |
 | rent agreement deposit clause | quoted Clause 6, flagged placeholders | contract PDF |
 | vehicle registration number | `BRO1CQ$478`, 12-Nov-2015 | **OCR'd scan** |
+| leave-application form (Hindi) | `फारम 'ख' छुट्टी-आवेदन का फार्म`, rule 5 (12) | **OCR'd Hindi scan** |
 
 And the honest failure: asking about a landlord conversation the library does not
 contain produced *"the only rental document is a blank template … I found no
@@ -145,12 +153,13 @@ messages from your landlord"* — no invention.
 ```bash
 ./docindex.sh                            # refresh (skips unchanged files)
 ./docindex.sh --stats                    # counts, sizes, manifest
-./docindex.sh --ocr "path/to/scan.pdf"   # OCR one file, reject non-Latin junk
+./docindex.sh --ocr "path/to/scan.pdf"   # OCR one file, reject character soup
 DO_OCR=1 ./docindex.sh                   # OCR every scan (slow, hours)
 LIMIT=3 ./docindex.sh                    # dry run on the first 3 files
 ```
 
-Environment knobs: `OCR_DPI` (150), `OCR_MAX_PAGES` (12), `DOC_INDEX`.
+Environment knobs: `OCR_DPI` (150), `OCR_MAX_PAGES` (12), `OCR_LANGS` (`eng+hin`
+when the Devanagari traineddata is present, otherwise `eng`), `DOC_INDEX`.
 
 ---
 
@@ -159,11 +168,11 @@ Environment knobs: `OCR_DPI` (150), `OCR_MAX_PAGES` (12), `DOC_INDEX`.
 | Limit | Why | Path forward |
 |---|---|---|
 | Only on the **AmitAI Bridge** provider | the reading happens in opencode/Termux, not in the app | in-app Kotlin scanner + SQLite FTS5 + a `search_docs` tool, for every provider |
-| **34 scans** stay unreadable | `tesseract` has `eng` traineddata only | drop `hin.traineddata` into `$PREFIX/share/tessdata` |
+| **16 scans** stay unreadable | handwritten pages and password-protected PDFs; junk OCR is rejected rather than indexed | none — read those by hand |
 | Index is **manual** | `crond` is down on this phone (and would fire `wabackup.py` too) | re-run `docindex.sh`, or enable `crond` and add one line |
 | Large scans are slow to OCR | ~8 MB PNG per page at 200 dpi | already lowered to 150 dpi; per-file OCR avoids the global pass |
 | Doc questions are slower than chat | the agent runs 1–3 greps before answering; the bridge caps a turn at 180 s | expected; free-tier saturation makes it worse |
-| Not a vector database | 338 documents and 28 MB of text are greppable in milliseconds | revisit past ~5 000 documents, or when questions are semantic rather than term-based |
+| Not a vector database | 356 documents and 28 MB of text are greppable in milliseconds | revisit past ~5 000 documents, or when questions are semantic rather than term-based |
 | Keyword, not meaning | `rg` matches terms | same as above |
 
 ---
@@ -188,7 +197,7 @@ Environment knobs: `OCR_DPI` (150), `OCR_MAX_PAGES` (12), `DOC_INDEX`.
 | *"I don't have access to your files"* | `./docindex.sh --stats` — is `_manifest.txt` there? Is the provider set to AmitAI Bridge? |
 | Answer cites nothing | the manifest may be stale; re-run the extractor |
 | A document is missing | `grep -i <name> ~/.local/share/docindex/text/_failed.log` — it is a scan |
-| OCR rejected as junk | the scan is not English; add traineddata |
+| OCR rejected as junk | the page is handwritten, or a script nothing here can read — check `_failed.log` |
 | Bridge times out on doc questions | free-tier quota; try another model or wait for the window |
 
 ## Rollback

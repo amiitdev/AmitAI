@@ -344,8 +344,8 @@ bridge's agent — **no APK change**, nothing in `src/` involved.
 
 | Piece | Detail |
 |---|---|
-| Index | 338 documents → 28 MB of plain text in `~/.local/share/docindex/text` |
-| Covered | PDF (incl. OCR of English scans), docx, md, txt, csv |
+| Index | 356 documents → 28 MB of plain text in `~/.local/share/docindex/text` |
+| Covered | PDF (incl. OCR of **English and Hindi** scans), docx, md, txt, csv |
 | Search | `pdftotext` once, then `rg` per question — no embeddings, nothing uploaded but the matched lines |
 | Honesty | answers cite the file; unreadable scans are reported, never guessed |
 | Scope | **AmitAI Bridge provider only** — it is the agent that does the reading |
@@ -1686,7 +1686,7 @@ and the Piper + Kitten models (78 MB). An arm64-only build would shed roughly
 | MCP needs the app installed and the service on | the socket lives in the app process | nothing to do — that is the design |
 | An agent call cannot wake a stopped app | Android will not let a socket resurrect a killed process | the foreground service is the supported answer (done in 3.9) |
 | Document search works on the AmitAI Bridge provider only | the reading happens in the opencode agent in Termux, not in the app | in-app Kotlin scanner + SQLite FTS5 + a `search_docs` tool, for every provider |
-| Scanned Hindi forms are not readable | `tesseract` here ships `eng` traineddata only, and junk OCR creates false hits | add `hin.traineddata` to `$PREFIX/share/tessdata`, then `./docindex.sh --ocr <file>` |
+| 16 scans still have no text | handwritten pages, password-protected PDFs, and photos too poor to recognise | targeted OCR (`./docindex.sh --ocr <file>`) or read them by hand |
 | The document index is refreshed by hand | `crond` is down on this phone, and starting it would also fire the WhatsApp backup job | re-run `~/docindex.sh` (~40 s when cached) |
 | No iOS build | Android-native bridges (Vosk, overlay, alarms) | port with platform modules |
 
@@ -2237,7 +2237,7 @@ of them. Nothing in the app changed to make this work, and no APK accompanies it
                        block describing    │
                        the library         ▼
                                     ~/.local/share/docindex/text
-                                    338 extracted .txt files, 28 MB
+                                    356 extracted .txt files, 28 MB
 ```
 
 ### What it answers
@@ -2282,10 +2282,10 @@ bridge sent before this feature existed.
 ### Measured here
 
 ```
-372 files scanned → 338 indexed  (203 pdf · 112 md · 16 txt · 5 docx · 1 csv · 1 MD)
-                    34 without text (Hindi scans, eng-only tesseract)
-                    28 MB of text
-cached pass       → ~40 s, 338 unchanged
+372 files scanned → 356 indexed  (221 pdf · 112 md · 16 txt · 5 docx · 1 csv · 1 MD)
+                    16 without text (handwritten, password-protected, unreadable)
+                    28 MB of text — Hindi scans included, via eng+hin OCR
+cached pass       → ~40 s, 356 unchanged
 first pass        → ~6 min
 OCR               → ~25 s/page at 150 dpi
 ```
@@ -2304,9 +2304,9 @@ DO_OCR=1 ./docindex.sh                   # OCR every scan (slow)
 | Limit | Why |
 |---|---|
 | Only on the **AmitAI Bridge** provider | the reading happens in opencode/Termux; Gemini and OpenAI never see the bridge |
-| 34 scans stay unreadable | `tesseract` has `eng` only; junk OCR is rejected on purpose |
+| 16 scans stay unreadable | handwritten or password-protected; OCR that produced character soup is rejected on purpose |
 | Manual refresh | `crond` is down here, and starting it would fire the WhatsApp backup job |
-| Keyword search, not meaning | 338 documents greppable in milliseconds; embeddings would add cost for little gain at this size |
+| Keyword search, not meaning | 356 documents greppable in milliseconds; embeddings would add cost for little gain at this size |
 | Slower than chat | the agent runs 1–3 greps, and the bridge caps a turn at 180 s |
 
 The originals are never written to; only the matched lines reach the model, the
