@@ -10,10 +10,10 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import Ionicons from '@react-native-vector-icons/ionicons';
-import { Settings, PRESETS, DEFAULT_SETTINGS, KITTEN_VOICES, PROVIDERS, OPENROUTER_FREE, ProviderDef, PUTER_MODELS, puterNoteFor } from '../types';
+import { Settings, PRESETS, DEFAULT_SETTINGS, KITTEN_VOICES, PROVIDERS, OPENROUTER_FREE, ProviderDef, PUTER_MODELS, puterNoteFor, FREEBUFF_MODELS, modelLabel, modelHint } from '../types';
 import { getWeeklyUsage, resetUsage } from '../lib/usage';
 import { useTheme, THEMES, ThemeKey, ThemeColors, radius, space, mono } from '../theme';
-import { ping } from '../api/openai';
+import { ping, RemoteModel } from '../api/openai';
 import { isPuterEndpoint } from '../api/puter';
 import { PuterSignIn } from '../components/PuterSignIn';
 import { hasSTT, hasTTS, hasPicker, openTtsSettings, ttsStatus, mcpInfo, setMcpService, copyText, readClipboard, McpInfo } from '../lib/native';
@@ -30,6 +30,8 @@ import { useAutomationStatus } from '../lib/useAutomation';
 const MODELS_FOR = (url: string): string[] => {
   if (isPuterEndpoint(url)) return PUTER_MODELS.map(m => m.model);
   if (url.includes('openrouter')) return OPENROUTER_FREE.map(m => m.model);
+  // freebuff's free catalogue: real ids, real names (see FREEBUFF_MODELS)
+  if (url.includes(':8131')) return FREEBUFF_MODELS.map(m => m.model);
   if (url.includes('generativelanguage')) {
     return [
       'gemini-3.5-flash',
@@ -65,7 +67,7 @@ interface Props {
 export function SettingsScreen({ settings, onChange, onBack, onClearChats, onActionMode }: Props) {
   const { colors, theme, setTheme } = useTheme();      const [testing, setTesting] = useState(false);
   const [ttsInfo, setTtsInfo] = useState<Awaited<ReturnType<typeof ttsStatus>>>(null);
-  const [models, setModels] = useState<string[] | null>(null);
+  const [models, setModels] = useState<RemoteModel[] | null>(null);
   const [usage, setUsage] = useState<Awaited<ReturnType<typeof getWeeklyUsage>> | null>(null);
   const [mcp, setMcp] = useState<McpInfo | null>(null);
   const [puterOpen, setPuterOpen] = useState(false);
@@ -278,8 +280,19 @@ export function SettingsScreen({ settings, onChange, onBack, onClearChats, onAct
 
       {!!models?.length && (
         <View style={styles.models}>
-          <Text style={styles.label}>Models on this endpoint</Text>
-          <Text style={styles.modelsText}>{models.slice(0, 30).join('\n')}</Text>
+          <Text style={styles.label}>Models on this endpoint — tap one to use it</Text>
+          {models.slice(0, 30).map(m => (
+            <TouchableOpacity
+              key={m.id}
+              style={styles.modelRow}
+              onPress={() => onChange({ model: m.id })}
+            >
+              <Text style={[styles.modelName, settings.model === m.id && styles.modelNameOn]}>
+                {m.name ?? modelLabel(m.id)}
+              </Text>
+              <Text style={styles.modelMeta}>{m.description ?? m.id}</Text>
+            </TouchableOpacity>
+          ))}
         </View>
       )}
 
@@ -301,10 +314,13 @@ export function SettingsScreen({ settings, onChange, onBack, onClearChats, onAct
             style={[styles.chip, settings.model === m && styles.chipOn]}
             onPress={() => onChange({ model: m })}
           >
-            <Text style={[styles.chipText, settings.model === m && styles.chipTextOn]}>{m}</Text>
+            <Text style={[styles.chipText, settings.model === m && styles.chipTextOn]}>{modelLabel(m)}</Text>
           </TouchableOpacity>
         ))}
       </View>
+      {!!modelHint(settings.model) && (
+        <Text style={styles.hint}>{modelHint(settings.model)}</Text>
+      )}
       {!!OR_HINTS[settings.model] && (
         <Text style={styles.hint}>{OR_HINTS[settings.model]}</Text>
       )}
@@ -1096,6 +1112,10 @@ const createStyles = (colors: ThemeColors) =>
     ttsFixText: { color: colors.textDim, fontSize: 12 },
     models: { marginTop: space(3), backgroundColor: colors.bgRaised, borderRadius: radius.md, padding: space(3) },
     modelsText: { color: colors.textDim, fontFamily: mono, fontSize: 11, lineHeight: 16 },
+    modelRow: { paddingVertical: space(2), borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+    modelName: { color: colors.text, fontSize: 14, fontWeight: '600' },
+    modelNameOn: { color: colors.accent },
+    modelMeta: { color: colors.textFaint, fontFamily: mono, fontSize: 11, marginTop: 2 },
     about: { color: colors.textFaint, fontSize: 12, lineHeight: 18 },
     dangerBtn: {
       marginTop: space(6),

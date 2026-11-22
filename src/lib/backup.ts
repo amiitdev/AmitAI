@@ -78,7 +78,7 @@ export function buildBackup(opts: {
   return {
     app: 'AmitAI',
     format: 1,
-    version: opts.version ?? '4.5.0',
+    version: opts.version ?? '4.6.0',
     createdAt: opts.now ?? Date.now(),
     withKeys: opts.withKeys,
     settings,

@@ -221,7 +221,7 @@ export const PROVIDERS: ProviderDef[] = [
     // and its own tools. One turn at a time, free hours per window.
     name: 'FreeBuff Bridge',
     url: 'http://127.0.0.1:8131/v1',
-    model: 'freebuff',
+    model: 'm-9a7e098cc1',
     keyHint: 'Paste BRIDGE_TOKEN from Termux · freebuff on the phone, free hours',
   },
   {
@@ -289,6 +289,40 @@ export const OPENROUTER_FREE: ProviderDef[] = [
 
 export const providerByName = (name: string): ProviderDef | undefined =>
   PROVIDERS.find(p => p.name === name);
+
+/**
+ * freebuff's free catalogue, straight from the bridge's `/v1/models`.
+ *
+ * The free tier is a shared daily budget of **freebucks**, not a per-model
+ * allowance: a few models cost 0 and keep working after the budget is spent,
+ * the DeepSeek ones cost 5–10. `free: true` marks the 0-price ones, so they are
+ * listed first — they are the ones that always answer.
+ *
+ * The id is freebuff's own model key; the name is what freebuff shows. Keys are
+ * stable, so this list only needs a refresh when freebuff adds a model — and
+ * "Test connection" always reads the live list from the bridge.
+ */
+export const FREEBUFF_MODELS: { model: string; name: string; hint: string; free?: boolean }[] = [
+  { model: 'm-9a7e098cc1', name: 'Solar Pro 4', hint: 'Upstage flagship · 500K ctx · 0 freebucks', free: true },
+  { model: 'm-69307952f8', name: 'Solar Mini 4', hint: 'Fast and light · 500K ctx · 0 freebucks', free: true },
+  { model: 'm-ddc687c50f', name: 'Nemotron 3.5 Lightning', hint: 'Fast · 256K ctx · 0 freebucks', free: true },
+  { model: 'm-9877f4d3ee', name: 'Beam 1.0', hint: 'Reflection + coding · 256K ctx · 0 freebucks', free: true },
+  { model: 'm-02244092cb', name: 'Glyph Cluster', hint: 'Stealth preview · 256K ctx · 0 freebucks', free: true },
+  { model: 'm-096e75164d', name: 'DeepSeek V4.1 Flash Fast', hint: 'Fastest · 1M ctx · 10 freebucks' },
+  { model: 'm-8db1ccbba6', name: 'DeepSeek V4.1 Flash', hint: 'Steady speed · 1M ctx · 10 freebucks' },
+  { model: 'm-61c26317cc', name: 'DeepSeek V4.1 Flash Slow', hint: 'Slow · cheapest · 5 freebucks' },
+];
+
+/** Human label for a model id, for chips and the live model list. */
+export const modelLabel = (id: string): string =>
+  FREEBUFF_MODELS.find(m => m.model === id)?.name ??
+  OPENROUTER_FREE.find(m => m.model === id)?.name ??
+  PUTER_MODELS.find(m => m.model === id)?.model ??
+  id;
+
+/** Why pick this model — the one-line hint under the chips. */
+export const modelHint = (id: string): string | undefined =>
+  FREEBUFF_MODELS.find(m => m.model === id)?.hint ?? OPENROUTER_FREE.find(m => m.model === id)?.keyHint;
 
 /**
  * Puter's documented chat models, in the order worth trying.

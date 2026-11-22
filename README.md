@@ -31,11 +31,12 @@ memory, chat search, weather and clock — with **no telemetry, no account, no m
 
 ## ⬇ Download
 
-The newest build is **4.5** (`versionCode 23`). Every APK ever shipped is on the
+The newest build is **4.6** (`versionCode 24`). Every APK ever shipped is on the
 [**Releases page**](https://github.com/amiitdev/AmitAI/releases).
 
 | Version | What changed | Size | Link |
 |---|---|---|---|
+| **4.6** | **Real freebuff models in the picker** — the bridge now serves freebuff's own catalogue (8 free models, named and priced in freebucks), and picking one in Settings actually switches the model on the phone. A model that costs 0 freebucks still answers after the daily budget is spent, and the error names the ones that do | 223 MB | `AmitAI-4.6.apk` |
 | **4.5** | **FreeBuff Bridge as a 7th provider** — the freebuff TUI on the phone behind the same OpenAI wire format as the AmitAI Bridge (`127.0.0.1:8131/v1`), its own key slot, one tap to switch. The bridge now runs as a Termux runit service, so it survives a reboot | 223 MB | `AmitAI-4.5.apk` |
 | **4.2** | **Puter.js as a 6th provider** — no API key, no credit card, its own free allowance (sign in once in Chrome, paste one token). Plus a **new app icon and splash**, rebuilt as vectors (adaptive icon + Android 13 themed monochrome layer + Android 12 system splash), and a **reply timing footer** (`12 s · 48 tok/s · 512 tok`) that refuses to invent a speed when a provider buffers the whole answer | 223 MB | [AmitAI-4.2.apk](https://github.com/amiitdev/AmitAI/releases/download/v4.2/AmitAI-4.2.apk) |
 | **4.1** | **On-device local model** — a 5th provider for `llama-server` running in Termux on the phone itself (`127.0.0.1:8080/v1`), no key, no network, works offline next to the cloud providers | 223 MB | [AmitAI-4.1.apk](https://github.com/amiitdev/AmitAI/releases/download/v4.1/AmitAI-4.1.apk) |
@@ -1434,8 +1435,35 @@ $ ls -lh AmitAI-3.9.apk
 | **OpenAI** | `api.openai.com/v1` | `gpt-5.1` | paid |
 | **Puter** | `api.puter.com/drivers/call` | `openai/gpt-6-luna` | Puter token — **no key, no card** |
 | **AmitAI Bridge** | `127.0.0.1:8130/v1` | `opencode-free/deepseek-v4.1-flash-free` | local token |
-| **FreeBuff Bridge** | `127.0.0.1:8131/v1` | `freebuff` | local token (same `BRIDGE_TOKEN`) |
+| **FreeBuff Bridge** | `127.0.0.1:8131/v1` | `Solar Pro 4` (`m-9a7e098cc1`) | local token (same `BRIDGE_TOKEN`) |
 | **Local (on-device)** | `127.0.0.1:8080/v1` | `Qwen2.5-Coder-1.5B` | none — runs on the phone |
+
+### freebuff's free models (4.6+)
+
+The FreeBuff Bridge reads freebuff's own catalogue
+(`codebuff.com/api/v1/freebuff/models`) and republishes it as plain OpenAI
+models, so the picker shows names instead of `m-0…` keys:
+
+| Model | Context | Price | Runs when the budget is spent? |
+|---|---|---|---|
+| Solar Pro 4 | 500K | 0 freebucks | yes |
+| Solar Mini 4 | 500K | 0 freebucks | yes |
+| Nemotron 3.5 Lightning | 256K | 0 freebucks | yes |
+| Beam 1.0 | 256K | 0 freebucks | yes |
+| Glyph Cluster | 256K | 0 freebucks | yes |
+| DeepSeek V4.1 Flash Fast | 1M | 10 freebucks | no |
+| DeepSeek V4.1 Flash | 1M | 10 freebucks | no |
+| DeepSeek V4.1 Flash Slow | 1M | 5 freebucks | no |
+
+The free tier is a **shared daily budget of freebucks** (25/day, resetting at
+midnight Los Angeles time), not a per-model allowance. So an empty budget only
+kills the paid models — the five 0-price ones keep answering, and the 429 says
+so instead of failing blankly. Premium models (GPT-6 Luna, Claude Haiku 5.5,
+Muse Ember) are filtered out by the bridge and never appear in the app.
+
+Switching models restarts the freebuff TUI (~25–30 s once), because freebuff has
+no `--model` flag and a running session cannot change model. Your AmitAI chat
+history is untouched; the freebuff session itself starts fresh.
 
 ### The on-device model (4.1+)
 
@@ -1635,6 +1663,7 @@ the foreground, and only when you ask a question that needs it).
 
 | Version | Code | Size | Highlights |
 |---|---|---|---|
+| 4.6 | 24 | 223 MB | **freebuff's real model list** — 8 free models with names and freebuck prices served from the bridge, one-tap switching from Settings (and from the app's model sheet), 0-freebuck models that still work on an empty budget, and a price-aware 429 instead of a blank failure |
 | 4.5 | 23 | 223 MB | **FreeBuff Bridge as a 7th provider** — freebuff driven through a pty, exposed as a plain OpenAI endpoint on `127.0.0.1:8131/v1`, with its own vault slot next to the AmitAI Bridge · bridge runs under runit, so it comes back after a reboot |
 | 4.4 | 22 | 223 MB | **backup & restore** of settings/keys/memory/schedules (auto on background, newest 10 kept) · **app lock** — salted-hash PIN, cool-down, optional FLAG_SECURE · **↑/↓ jump buttons** in the chat, and the long-chat scroll-up bug fixed |
 | 4.2 | 20 | 223 MB | **Puter as a 6th provider** (no key, no card, own free allowance) · **vector app icon + splash** (adaptive, Android 13 monochrome, Android 12 system splash) · reply timing footer that never invents a speed |

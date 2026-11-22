@@ -183,7 +183,17 @@ describe('Settings · provider switching', () => {
 
     await press(tree.root, 'FreeBuff Bridge');
     expect(latest.baseUrl).toBe('http://127.0.0.1:8131/v1');
-    expect(latest.model).toBe('freebuff');
+    // a 0-freebuck model, so the picker works even with the daily budget spent
+    expect(latest.model).toBe('m-9a7e098cc1');
+    // chips show freebuff's own names, never the raw keys
+    expect(() => chip(tree.root, 'Solar Pro 4')).not.toThrow();
+    expect(() => chip(tree.root, 'DeepSeek V4.1 Flash Fast')).not.toThrow();
+    expect(() => chip(tree.root, 'm-9a7e098cc1')).toThrow();
+
+    // tapping a chip switches the model, and the hint says what it costs
+    await press(tree.root, 'Beam 1.0');
+    expect(latest.model).toBe('m-9877f4d3ee');
+    expect(textOf(tree.root.findAllByType(Text).find(n => String(n.props.children).includes('freebucks'))!)).toContain('0 freebucks');
     // a different bridge, so a different vault slot: the field starts empty
     expect(latest.apiKey).toBe('');
     expect(latest.providerKeys.OpenAI).toBe('sk-openai-key');

@@ -18,7 +18,7 @@ import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@react-native-vector-icons/ionicons';
 
-import { Conversation, Message, Settings, Source, DEFAULT_SETTINGS, PRICES, OPENROUTER_FREE } from './src/types';
+import { Conversation, Message, Settings, Source, DEFAULT_SETTINGS, PRICES, OPENROUTER_FREE, FREEBUFF_MODELS } from './src/types';
 import { ToastProvider, useToast } from './src/components/Toast';
 import { ActionSheet } from './src/components/Sheet';
 import { consumeLaunchVoice, onWake } from './src/lib/assistant';
@@ -119,6 +119,8 @@ function AppInner() {
   const [modelSheet, setModelSheet] = useState(false);
   const [modelOptions, setModelOptions] = useState<string[]>(MODEL_FALLBACK);
   const [modelHints, setModelHints] = useState<Record<string, string>>({});
+  /** Friendly names published next to the ids (bridges do this; most vendors don't). */
+  const [modelNames, setModelNames] = useState<Record<string, string>>({});
   const [modelLoading, setModelLoading] = useState(false);
   const [toolStage, setToolStage] = useState<string | null>(null);
   const [voiceMode, setVoiceMode] = useState(false);
@@ -414,9 +416,25 @@ function AppInner() {
       return;
     }
 
+    // freebuff's catalogue is known: real names, and the price in freebucks.
+    if (settings.baseUrl.includes(':8131')) {
+      setModelOptions(FREEBUFF_MODELS.map(m => m.model));
+      setModelNames(Object.fromEntries(FREEBUFF_MODELS.map(m => [m.model, m.name])));
+      setModelHints(Object.fromEntries(FREEBUFF_MODELS.map(m => [m.model, m.hint])));
+      setModelLoading(false);
+      return;
+    }
+
     try {
-      const ids = await ping(settings.baseUrl, settings.apiKey);
-      const usable = ids.filter(id => !NOT_CHAT.test(id));
+      const remote = await ping(settings.baseUrl, settings.apiKey);
+      const names: Record<string, string> = {};
+      const usable = remote
+        .filter(m => !NOT_CHAT.test(m.id))
+        .map(m => {
+          if (m.name) names[m.id] = m.name;
+          return m.id;
+        });
+      setModelNames(names);
       if (usable.length) setModelOptions(usable.slice(0, 80));
 
       const hints: Record<string, string> = {};
@@ -1053,12 +1071,12 @@ function AppInner() {
         title="Model"
         onClose={() => setModelSheet(false)}
         items={modelOptions.map(m => ({
-          label: m,
+          label: modelNames[m] ?? m,
           icon: settings.model === m ? ('checkmark-circle' as const) : ('ellipse-outline' as const),
-          hint: modelHints[m] ?? baseHint(m),
+          hint: [modelHints[m] ?? baseHint(m), modelNames[m] ? m : null].filter(Boolean).join(' · '),
           onPress: () => {
             patchSettings({ model: m });
-            toast(`Model set to ${m}`, 'info');
+            toast(`Model set to ${modelNames[m] ?? m}`, 'info');
           },
         }))}
         loading={modelLoading}

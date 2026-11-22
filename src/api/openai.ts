@@ -533,19 +533,31 @@ export function runAgent(opts: AgentOptions, handlers: AgentHandlers): RunHandle
 
 /* -------------------------------- extras -------------------------------- */
 
+/** One entry of an endpoint's `/models` list, with whatever metadata it offers. */
+export interface RemoteModel {
+  id: string;
+  name?: string;
+  description?: string;
+}
+
 /** Cheap connectivity + auth check for the settings screen. */
-export async function ping(baseUrl: string, apiKey: string): Promise<string[]> {
+export async function ping(baseUrl: string, apiKey: string): Promise<RemoteModel[]> {
   // Puter publishes its catalogue unauthenticated, so this works before the
   // token is pasted — which is exactly when you want to know the URL is right.
-  if (isPuterEndpoint(baseUrl)) return puterModels();
+  if (isPuterEndpoint(baseUrl)) return (await puterModels()).map(id => ({ id }));
 
   const res = await fetch(`${trimBase(baseUrl)}/models`, {
     headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined,
   });
   if (!res.ok) throw new ApiError(`HTTP ${res.status} ${res.statusText}`, res.status);
   const j = await res.json();
-  const ids: string[] = (j.data || []).map((m: any) => String(m.id).replace(/^models\//, ''));
-  return ids.sort();
+  const list: RemoteModel[] = (j.data || []).map((m: any) => ({
+    id: String(m.id).replace(/^models\//, ''),
+    // Bridges and a few vendors publish a friendlier name next to the id.
+    name: typeof m.name === 'string' && m.name ? m.name : undefined,
+    description: typeof m.description === 'string' && m.description ? m.description : undefined,
+  }));
+  return list.sort((a, b) => a.id.localeCompare(b.id));
 }
 
 /** Read a local file:// uri into a data: URL so vision models can see it. */
