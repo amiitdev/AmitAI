@@ -230,7 +230,7 @@ export function SettingsScreen({ settings, onChange, onBack, onClearChats, onAct
           autoCapitalize="none"
           autoCorrect={false}
         />
-        <Text style={styles.hint}>Anything OpenAI-compatible. Phone bridge: http://127.0.0.1:8130/v1</Text>
+        <Text style={styles.hint}>Anything OpenAI-compatible. Phone bridges: http://127.0.0.1:8130/v1 (AmitAI) · http://127.0.0.1:8131/v1 (FreeBuff)</Text>
       </View>
       <View style={styles.field}>
         <Text style={styles.label}>API key{currentProvider ? ` · ${currentName}` : ''}</Text>

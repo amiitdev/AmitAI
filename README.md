@@ -31,11 +31,12 @@ memory, chat search, weather and clock — with **no telemetry, no account, no m
 
 ## ⬇ Download
 
-The newest build is **4.2** (`versionCode 20`). Every APK ever shipped is on the
+The newest build is **4.5** (`versionCode 23`). Every APK ever shipped is on the
 [**Releases page**](https://github.com/amiitdev/AmitAI/releases).
 
 | Version | What changed | Size | Link |
 |---|---|---|---|
+| **4.5** | **FreeBuff Bridge as a 7th provider** — the freebuff TUI on the phone behind the same OpenAI wire format as the AmitAI Bridge (`127.0.0.1:8131/v1`), its own key slot, one tap to switch. The bridge now runs as a Termux runit service, so it survives a reboot | 223 MB | `AmitAI-4.5.apk` |
 | **4.2** | **Puter.js as a 6th provider** — no API key, no credit card, its own free allowance (sign in once in Chrome, paste one token). Plus a **new app icon and splash**, rebuilt as vectors (adaptive icon + Android 13 themed monochrome layer + Android 12 system splash), and a **reply timing footer** (`12 s · 48 tok/s · 512 tok`) that refuses to invent a speed when a provider buffers the whole answer | 223 MB | [AmitAI-4.2.apk](https://github.com/amiitdev/AmitAI/releases/download/v4.2/AmitAI-4.2.apk) |
 | **4.1** | **On-device local model** — a 5th provider for `llama-server` running in Termux on the phone itself (`127.0.0.1:8080/v1`), no key, no network, works offline next to the cloud providers | 223 MB | [AmitAI-4.1.apk](https://github.com/amiitdev/AmitAI/releases/download/v4.1/AmitAI-4.1.apk) |
 | **4.0** | **Offline neural voices** — Piper + KittenTTS run inside the app via sherpa-onnx (no key, no quota), audio-synced transcript with karaoke highlight, Jarvis-style voice HUD, STT survives `ERROR_CLIENT`, 87 tests | 223 MB | [AmitAI-4.0.apk](https://github.com/amiitdev/AmitAI/releases/download/v4.0/AmitAI-4.0.apk) |
@@ -62,8 +63,9 @@ The newest build is **4.2** (`versionCode 20`). Every APK ever shipped is on the
 
 No key at all? **Puter** needs no key and no card — sign in once and paste the
 token (§13). Or point the Base URL at a local **Ollama**
-(`http://<laptop-ip>:11434/v1`) or the phone-local **AmitAI Bridge**
-(`http://127.0.0.1:8130/v1`).
+(`http://<laptop-ip>:11434/v1`) or one of the phone-local bridges: **AmitAI
+Bridge** (`http://127.0.0.1:8130/v1`, opencode) or **FreeBuff Bridge**
+(`http://127.0.0.1:8131/v1`, freebuff).
 
 Want it fully offline? Run `llama-server` in Termux on the phone and pick the
 **Local (on-device)** provider (`http://127.0.0.1:8080/v1`) — no key, no network,
@@ -179,7 +181,7 @@ clock, clipboard, memory, scheduler) runs locally.
 
 | Feature | Detail |
 |---|---|
-| 5 one-tap providers | Gemini · OpenRouter · OpenAI · AmitAI Bridge (phone-local) · Local on-device |
+| 6 one-tap providers | Gemini · OpenRouter · OpenAI · AmitAI Bridge (phone-local) · FreeBuff Bridge (phone-local) · Local on-device |
 | Any OpenAI-compatible URL | Ollama, LM Studio, vLLM, gateways, self-hosted |
 | Per-provider key vault | switching Gemini ↔ OpenRouter keeps **both** keys |
 | Live model list | `GET /models` on *Test connection*; pick from what really exists |
@@ -1432,6 +1434,7 @@ $ ls -lh AmitAI-3.9.apk
 | **OpenAI** | `api.openai.com/v1` | `gpt-5.1` | paid |
 | **Puter** | `api.puter.com/drivers/call` | `openai/gpt-6-luna` | Puter token — **no key, no card** |
 | **AmitAI Bridge** | `127.0.0.1:8130/v1` | `opencode-free/deepseek-v4.1-flash-free` | local token |
+| **FreeBuff Bridge** | `127.0.0.1:8131/v1` | `freebuff` | local token (same `BRIDGE_TOKEN`) |
 | **Local (on-device)** | `127.0.0.1:8080/v1` | `Qwen2.5-Coder-1.5B` | none — runs on the phone |
 
 ### The on-device model (4.1+)
@@ -1632,6 +1635,7 @@ the foreground, and only when you ask a question that needs it).
 
 | Version | Code | Size | Highlights |
 |---|---|---|---|
+| 4.5 | 23 | 223 MB | **FreeBuff Bridge as a 7th provider** — freebuff driven through a pty, exposed as a plain OpenAI endpoint on `127.0.0.1:8131/v1`, with its own vault slot next to the AmitAI Bridge · bridge runs under runit, so it comes back after a reboot |
 | 4.4 | 22 | 223 MB | **backup & restore** of settings/keys/memory/schedules (auto on background, newest 10 kept) · **app lock** — salted-hash PIN, cool-down, optional FLAG_SECURE · **↑/↓ jump buttons** in the chat, and the long-chat scroll-up bug fixed |
 | 4.2 | 20 | 223 MB | **Puter as a 6th provider** (no key, no card, own free allowance) · **vector app icon + splash** (adaptive, Android 13 monochrome, Android 12 system splash) · reply timing footer that never invents a speed |
 | 4.1 | 14 | 223 MB | **on-device local model** — `llama-server` in Termux, no key, no network |
@@ -1659,8 +1663,9 @@ and the Piper + Kitten models (78 MB). An arm64-only build would shed roughly
 35–40 MB; moving the voices to a first-run download would shed most of the rest.
 
 > **Documents (§23) ship outside the APK.** The document library lives in Termux —
-> an extractor script plus a prompt block in the bridge — so **4.4 stays the
-> newest binary**; there is no build to install for it.
+> an extractor script plus a prompt block in the bridge — so 4.4 added no binary
+> of its own; **4.5 is the first build since 4.2** and carries the FreeBuff
+> Bridge provider.
 
 ---
 

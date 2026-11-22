@@ -22,6 +22,8 @@ describe('isLocalEndpoint', () => {
   it('does not match the other phone-local services', () => {
     // 8130 is the AmitAI Bridge (a real OpenAI endpoint — it keeps its tools)
     expect(isLocalEndpoint('http://127.0.0.1:8130/v1')).toBe(false);
+    // 8131 is the FreeBuff Bridge (same contract, different engine)
+    expect(isLocalEndpoint('http://127.0.0.1:8131/v1')).toBe(false);
     // Ollama on the laptop
     expect(isLocalEndpoint('http://192.168.29.133:11434/v1')).toBe(false);
   });

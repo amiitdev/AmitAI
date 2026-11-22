@@ -175,6 +175,32 @@ describe('Settings · provider switching', () => {
     await ReactTestRenderer.act(async () => tree.unmount());
   });
 
+  test('FreeBuff Bridge is its own one-tap provider, port and key slot', async () => {
+    let tree!: ReactTestRenderer.ReactTestRenderer;
+    await ReactTestRenderer.act(async () => {
+      tree = ReactTestRenderer.create(<Harness initial={START} />);
+    });
+
+    await press(tree.root, 'FreeBuff Bridge');
+    expect(latest.baseUrl).toBe('http://127.0.0.1:8131/v1');
+    expect(latest.model).toBe('freebuff');
+    // a different bridge, so a different vault slot: the field starts empty
+    expect(latest.apiKey).toBe('');
+    expect(latest.providerKeys.OpenAI).toBe('sk-openai-key');
+
+    await typeKey(tree.root, 'fb-bridge-token');
+    expect(latest.providerKeys['FreeBuff Bridge']).toBe('fb-bridge-token');
+
+    // and it never clobbers the AmitAI Bridge token
+    await press(tree.root, 'AmitAI Bridge (free)');
+    expect(latest.baseUrl).toBe('http://127.0.0.1:8130/v1');
+    expect(latest.apiKey).toBe('');
+    await press(tree.root, 'FreeBuff Bridge');
+    expect(latest.apiKey).toBe('fb-bridge-token');
+
+    await ReactTestRenderer.act(async () => tree.unmount());
+  });
+
   test('Puter is a five-second switch: url, default model, chips and a sign-in button', async () => {
     let tree!: ReactTestRenderer.ReactTestRenderer;
     await ReactTestRenderer.act(async () => {

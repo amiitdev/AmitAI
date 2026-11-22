@@ -217,6 +217,14 @@ export const PROVIDERS: ProviderDef[] = [
     keyHint: 'Paste BRIDGE_TOKEN from Termux · phone-local, free models',
   },
   {
+    // The freebuff TUI driven through a pty: same OpenAI wire format, own agent
+    // and its own tools. One turn at a time, free hours per window.
+    name: 'FreeBuff Bridge',
+    url: 'http://127.0.0.1:8131/v1',
+    model: 'freebuff',
+    keyHint: 'Paste BRIDGE_TOKEN from Termux · freebuff on the phone, free hours',
+  },
+  {
     // Not an OpenAI endpoint: the base URL is a marker that routes the request
     // through src/api/puter.ts, which speaks Puter's own driver API.
     name: 'Puter (free)',
