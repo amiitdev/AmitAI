@@ -19,7 +19,8 @@ each). Download from the [Releases page](https://github.com/amiitdev/AmitAI/rele
 | `AmitAI-4.2.apk` | 4.2 | 20 | 223 MB | `6b5d766439fd25932f92ee14e7afe42f` |
 | `AmitAI-4.4.apk` | 4.4 | 22 | 223 MB | `91ed2729fb1eca782777a846a6c71a03` |
 | `AmitAI-4.5.apk` | 4.5 | 23 | 223 MB | `0b6ead767cd8f07131120fab35a2e7f2` |
-| `AmitAI-4.6.apk` | 4.6 | 24 | 223 MB | `88b001a3a43d3abd7165d68e02649548` |
+| `AmitAI-4.6.apk` | 4.6 | 24 | 223 MB | `c67948721bfeea3a1245606bb1a2185b` |
+| `AmitAI-4.7.apk` | 4.7 | 25 | 223 MB | `94b3323413abd5def8baa9b011ba261b` |
 
 All builds: `com.amit.ai`, min SDK 24, target SDK 36. Through 3.9 the APKs carried
 four ABIs (`arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64`); 4.0 ships `arm64-v8a` and
@@ -65,7 +66,10 @@ sha256sum AmitAI-4.5.apk
 # 020d264cd04fef1c63beef3888b45c279166077fba3b453a12bab9df72e3e6de  AmitAI-4.5.apk
 
 sha256sum AmitAI-4.6.apk
-# c6109da83fd5382ad5ef5b4ba215f19a9936afa4caf6ffdedf67cefab80857c3  AmitAI-4.6.apk
+# c1b236801ff3d0fa90f556de68ba676e4d86274a93a71bbc00196a5ed2238caf  AmitAI-4.6.apk
+
+sha256sum AmitAI-4.7.apk
+# 1bc1011508f56657d3775c607806a1d4086246377a16d897d9b7995ff43c9c8c  AmitAI-4.7.apk
 
 # older builds
 md5sum AmitAI-3.8.apk

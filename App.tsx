@@ -18,7 +18,7 @@ import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@react-native-vector-icons/ionicons';
 
-import { Conversation, Message, Settings, Source, DEFAULT_SETTINGS, PRICES, OPENROUTER_FREE, FREEBUFF_MODELS } from './src/types';
+import { Conversation, Message, Settings, Source, DEFAULT_SETTINGS, PRICES, OPENROUTER_FREE, FREEBUFF_MODELS, modelLabel } from './src/types';
 import { ToastProvider, useToast } from './src/components/Toast';
 import { ActionSheet } from './src/components/Sheet';
 import { consumeLaunchVoice, onWake } from './src/lib/assistant';
@@ -114,7 +114,12 @@ function AppInner() {
 
   const [draft, setDraft] = useState('');
   const [imageUris, setImageUris] = useState<string[]>([]);
-  const [streaming, setStreaming] = useState(false);
+  /**
+   * Runs are per chat. A reply that is still arriving in one tab must not lock
+   * the composer of another, so we track the ids of the chats that are busy
+   * rather than one global boolean.
+   */
+  const [streamingIds, setStreamingIds] = useState<string[]>([]);
   const [listening, setListening] = useState(false);
   const [modelSheet, setModelSheet] = useState(false);
   const [modelOptions, setModelOptions] = useState<string[]>(MODEL_FALLBACK);
@@ -122,7 +127,8 @@ function AppInner() {
   /** Friendly names published next to the ids (bridges do this; most vendors don't). */
   const [modelNames, setModelNames] = useState<Record<string, string>>({});
   const [modelLoading, setModelLoading] = useState(false);
-  const [toolStage, setToolStage] = useState<string | null>(null);
+  /** Which tool each running chat is calling right now, keyed by chat id. */
+  const [toolStages, setToolStages] = useState<Record<string, string>>({});
   const [voiceMode, setVoiceMode] = useState(false);
   /** locked at cold start (a PIN exists) and after a minute in the background */
   const [locked, setLocked] = useState(false);
@@ -204,9 +210,12 @@ function AppInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const streamRef = useRef<RunHandle | null>(null);
+  /**
+   * One live run per chat. A map (not a single ref) so a second tab can start
+   * its own reply, and so stopping a chat never stops somebody else's.
+   */
+  const streamsRef = useRef(new Map<string, RunHandle>());
   const voiceRunRef = useRef<RunHandle | null>(null);
-  const sourcesRef = useRef<Source[]>([]);
   const listRef = useRef<FlatList<Message>>(null);
 
   /**
@@ -377,6 +386,13 @@ function AppInner() {
   );
 
   /**
+   * Busy-ness belongs to the chat on screen, not to the app: another tab keeps
+   * answering in the background while this one stays writable.
+   */
+  const streaming = !!active && streamingIds.includes(active.id);
+  const toolStage = active ? toolStages[active.id] ?? null : null;
+
+  /**
    * Follow a reply while it is being written.
    *
    * `onContentSizeChange` only fires when the list re-measures, which lags
@@ -464,6 +480,15 @@ function AppInner() {
     [activeId],
   );
 
+  /**
+   * Update one named chat. A run keeps writing to the tab it started in even
+   * after the user swipes to another one, so every streaming callback goes
+   * through here instead of `updateActive`.
+   */
+  const updateChat = useCallback((id: string, fn: (c: Conversation) => Conversation) => {
+    setConversations(prev => prev.map(c => (c.id === id ? { ...fn(c), updatedAt: Date.now() } : c)));
+  }, []);
+
   const newChat = useCallback(() => {
     const c = emptyConversation();
     setConversations(prev => [c, ...prev]);
@@ -501,21 +526,28 @@ function AppInner() {
   /* -------------------------------- send -------------------------------- */
 
   const runCompletion = useCallback(
-    (history: Message[], recall = '') => {
+    (chatId: string, history: Message[], recall = '') => {
       const asst = { ...newMessage('assistant', ''), streaming: true, model: settings.model };
       // Name the chat after the first thing the user asked. `history` already
       // contains that message; `c.messages` is still the empty list for a new
       // chat, which is exactly the case we rename.
       const firstAsk = [...history].reverse().find(m => m.role === 'user')?.content ?? '';
-      updateActive(c => ({
+      updateChat(chatId, c => ({
         ...c,
         title: c.messages.length === 0 ? titleFrom(firstAsk) : c.title,
         messages: [...history, asst],
       }));
 
-      setStreaming(true);
-      setToolStage(null);
-      sourcesRef.current = [];
+      setStreamingIds(prev => (prev.includes(chatId) ? prev : [...prev, chatId]));
+      const setStage = (text: string | null) =>
+        setToolStages(prev => {
+          const next = { ...prev };
+          if (text) next[chatId] = text;
+          else delete next[chatId];
+          return next;
+        });
+      setStage(null);
+      let srcs: Source[] = [];
 
       let pending = '';
       // Timings for this reply, filled by onStats just before onDone.
@@ -525,7 +557,7 @@ function AppInner() {
         if (!pending) return;
         const chunk = pending;
         pending = '';
-        updateActive(c => ({
+        updateChat(chatId, c => ({
           ...c,
           messages: c.messages.map(m =>
             m.id === asst.id ? { ...m, content: m.content + chunk } : m,
@@ -540,7 +572,7 @@ function AppInner() {
         flush();
         const text = opts.text;
         const st = stats as RunStats | null;
-        updateActive(c => ({
+        updateChat(chatId, c => ({
           ...c,
           messages: c.messages.map(m =>
             m.id === asst.id
@@ -559,13 +591,14 @@ function AppInner() {
               : m,
           ),
         }));
-        setStreaming(false);
-        setToolStage(null);
-        streamRef.current = null;
-        // Release the phone: the turn is over, so the foreground service and
-        // the "acting on screen" card go away even if the agent never called
-        // stop_automation itself.
-        if (hasAutomation && settings.actionMode) endSession().catch(() => {});
+        streamsRef.current.delete(chatId);
+        setStreamingIds(prev => prev.filter(id => id !== chatId));
+        setStage(null);
+        // Release the phone only when nothing else is still running: a reply in
+        // another tab may be driving the screen right now.
+        if (hasAutomation && settings.actionMode && streamsRef.current.size === 0) {
+          endSession().catch(() => {});
+        }
       };
 
       const exec = makeExecutor(settings);
@@ -589,7 +622,7 @@ function AppInner() {
         beginSession().catch(() => {});
       }
 
-      streamRef.current = runAgent(
+      streamsRef.current.set(chatId, runAgent(
         {
           baseUrl: settings.baseUrl,
           apiKey: settings.apiKey,
@@ -609,20 +642,20 @@ function AppInner() {
           onDelta: d => {
             pending += d;
           },
-          onToolStart: (name, args) => setToolStage(exec.label(name, args)),
-          onToolDone: () => setToolStage(null),
-          onSources: srcs => {
-            sourcesRef.current = srcs;
+          onToolStart: (name, args) => setStage(exec.label(name, args)),
+          onToolDone: () => setStage(null),
+          onSources: s => {
+            srcs = s;
           },
           onStats: s => {
             stats = s;
           },
-          onDone: text => finalize({ text: text || undefined, sources: sourcesRef.current }),
+          onDone: text => finalize({ text: text || undefined, sources: srcs }),
           onError: err => finalize({ error: err.message }),
         },
-      );
+      ));
     },
-    [settings, updateActive],
+    [settings, updateChat],
   );
 
   /** An answer produced on-device (memory commands), no network involved. */
@@ -703,21 +736,26 @@ function AppInner() {
 
     const history = [...active.messages.filter(m => !m.error), msg];
     const recall = await buildRecallPreamble(text, active.id).catch(() => '');
-    runCompletion(history, recall);
+    runCompletion(active.id, history, recall);
   }, [draft, streaming, active, settings, imageUris, runCompletion, toast, localExchange]);
 
   const stop = useCallback(() => {
-    streamRef.current?.stop();
-    streamRef.current = null;
-    setStreaming(false);
-    setToolStage(null);
+    if (!active) return;
+    streamsRef.current.get(active.id)?.stop();
+    streamsRef.current.delete(active.id);
+    setStreamingIds(prev => prev.filter(id => id !== active.id));
+    setToolStages(prev => {
+      const next = { ...prev };
+      delete next[active.id];
+      return next;
+    });
     // Stopping a reply that was driving the phone must also let go of the phone.
-    if (hasAutomation) stopAutomation().catch(() => {});
-    updateActive(c => ({
+    if (hasAutomation && streamsRef.current.size === 0) stopAutomation().catch(() => {});
+    updateChat(active.id, c => ({
       ...c,
       messages: c.messages.map(m => (m.streaming ? { ...m, streaming: false } : m)),
     }));
-  }, [updateActive]);
+  }, [active, updateChat]);
 
   const regenerate = useCallback(async () => {
     if (!active || streaming) return;
@@ -726,7 +764,7 @@ function AppInner() {
     if (!msgs.length) return;
     const lastAsk = [...msgs].reverse().find(m => m.role === 'user')?.content ?? '';
     const recall = await buildRecallPreamble(lastAsk, active.id).catch(() => '');
-    runCompletion(msgs, recall);
+    runCompletion(active.id, msgs, recall);
   }, [active, streaming, runCompletion]);
 
   /**
@@ -737,12 +775,15 @@ function AppInner() {
     (text: string) =>
       new Promise<string>((resolve, reject) => {
         if (!active) return reject(new Error('No open chat'));
+        // The answer must land in the chat the question was asked in, even if
+        // the user swipes to another tab while the voice turn is running.
+        const chatId = active.id;
         // Cancel any pending voice generation immediately on interruption
         voiceRunRef.current?.stop();
         const userMsg = { ...newMessage('user', text) };
         const history = [...active.messages.filter(m => !m.error), userMsg];
 
-        updateActive(c => ({
+        updateChat(chatId, c => ({
           ...c,
           title: c.messages.length === 0 ? titleFrom(text) : c.title,
           messages: [...c.messages, userMsg],
@@ -791,7 +832,7 @@ function AppInner() {
               if (hasAutomation && settings.actionMode) endSession().catch(() => {});
               const answer = t || full;
               const st = voiceStats as RunStats | null;
-              updateActive(c => ({
+              updateChat(chatId, c => ({
                 ...c,
                 messages: [
                   ...c.messages,
@@ -817,7 +858,7 @@ function AppInner() {
           },
         );
       }),
-    [active, settings, updateActive],
+    [active, settings, updateChat],
   );
 
   /* -------------------------------- voice ------------------------------- */
@@ -858,7 +899,7 @@ function AppInner() {
         <TouchableOpacity style={styles.modelPill} onPress={openModelSheet} hitSlop={6}>
           <Ionicons name="sparkles" size={11} color={colors.accent} />
           <Text numberOfLines={1} style={styles.headerSub}>
-            {settings.model}
+            {modelLabel(settings.model)}
           </Text>
           <Ionicons name="chevron-down" size={11} color={colors.textFaint} />
         </TouchableOpacity>

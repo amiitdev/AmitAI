@@ -654,7 +654,7 @@ export function SettingsScreen({ settings, onChange, onBack, onClearChats, onAct
             <Text style={styles.usageVal}>{usage.total.tokensOut.toLocaleString()}</Text>
           </View>
           <View style={styles.usageRow}>
-            <Text style={styles.usageLabel}>Est. cost ({settings.model})</Text>
+            <Text style={styles.usageLabel}>Est. cost ({modelLabel(settings.model)})</Text>
             <Text style={styles.usageVal}>${usage.total.cost.toFixed(2)}</Text>
           </View>
           <TouchableOpacity style={styles.resetUsageBtn} onPress={() => { resetUsage(); setUsage(null); }}>

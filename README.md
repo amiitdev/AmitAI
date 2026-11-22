@@ -31,11 +31,12 @@ memory, chat search, weather and clock — with **no telemetry, no account, no m
 
 ## ⬇ Download
 
-The newest build is **4.6** (`versionCode 24`). Every APK ever shipped is on the
+The newest build is **4.7** (`versionCode 25`). Every APK ever shipped is on the
 [**Releases page**](https://github.com/amiitdev/AmitAI/releases).
 
 | Version | What changed | Size | Link |
 |---|---|---|---|
+| **4.7** | **Chat tabs run in parallel** — a reply no longer locks the composer: switch to another tab and ask there while the first keeps streaming. Each chat owns its own run, its own tool chip and its own stop button, and tokens land in the tab they were asked in even after you swipe away | 223 MB | `AmitAI-4.7.apk` |
 | **4.6** | **Real freebuff models in the picker** — the bridge now serves freebuff's own catalogue (8 free models, named and priced in freebucks), and picking one in Settings actually switches the model on the phone. A model that costs 0 freebucks still answers after the daily budget is spent, and the error names the ones that do | 223 MB | `AmitAI-4.6.apk` |
 | **4.5** | **FreeBuff Bridge as a 7th provider** — the freebuff TUI on the phone behind the same OpenAI wire format as the AmitAI Bridge (`127.0.0.1:8131/v1`), its own key slot, one tap to switch. The bridge now runs as a Termux runit service, so it survives a reboot | 223 MB | `AmitAI-4.5.apk` |
 | **4.2** | **Puter.js as a 6th provider** — no API key, no credit card, its own free allowance (sign in once in Chrome, paste one token). Plus a **new app icon and splash**, rebuilt as vectors (adaptive icon + Android 13 themed monochrome layer + Android 12 system splash), and a **reply timing footer** (`12 s · 48 tok/s · 512 tok`) that refuses to invent a speed when a provider buffers the whole answer | 223 MB | [AmitAI-4.2.apk](https://github.com/amiitdev/AmitAI/releases/download/v4.2/AmitAI-4.2.apk) |
@@ -1663,6 +1664,7 @@ the foreground, and only when you ask a question that needs it).
 
 | Version | Code | Size | Highlights |
 |---|---|---|---|
+| 4.7 | 25 | 223 MB | **parallel chat tabs** — runs are keyed by chat id, so a reply in one tab no longer disables the composer in another; each tab has its own stop button, tool chip and stream, and a background answer keeps landing in the tab it was asked in |
 | 4.6 | 24 | 223 MB | **freebuff's real model list** — 8 free models with names and freebuck prices served from the bridge, one-tap switching from Settings (and from the app's model sheet), 0-freebuck models that still work on an empty budget, and a price-aware 429 instead of a blank failure |
 | 4.5 | 23 | 223 MB | **FreeBuff Bridge as a 7th provider** — freebuff driven through a pty, exposed as a plain OpenAI endpoint on `127.0.0.1:8131/v1`, with its own vault slot next to the AmitAI Bridge · bridge runs under runit, so it comes back after a reboot |
 | 4.4 | 22 | 223 MB | **backup & restore** of settings/keys/memory/schedules (auto on background, newest 10 kept) · **app lock** — salted-hash PIN, cool-down, optional FLAG_SECURE · **↑/↓ jump buttons** in the chat, and the long-chat scroll-up bug fixed |
